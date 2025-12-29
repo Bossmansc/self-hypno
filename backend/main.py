@@ -39,23 +39,28 @@ async def generate_script(request: GenerateRequest):
     # 1. Determine API Key
     # Priority: Request Body Key > Server Environment Variable
     api_key = request.api_key
+    
+    env_var_name = ""
+    
     if not api_key:
         if provider == "deepseek":
             api_key = os.environ.get("DEEPSEEK_API_KEY")
+            env_var_name = "DEEPSEEK_API_KEY"
         elif provider == "openai":
             api_key = os.environ.get("OPENAI_API_KEY")
+            env_var_name = "OPENAI_API_KEY"
         elif provider == "gemini":
             api_key = os.environ.get("GEMINI_API_KEY")
-    
+            env_var_name = "GEMINI_API_KEY"
+            
     if not api_key:
         raise HTTPException(
             status_code=400, 
-            detail=f"No API key configured for {provider}. Please add DEEPSEEK_API_KEY to server environment variables."
+            detail=f"No API key configured for '{provider}'. Server expected env var: {env_var_name}"
         )
 
     # 2. Call the AI Provider
     timeout = httpx.Timeout(60.0, connect=10.0)
-    
     async with httpx.AsyncClient(timeout=timeout) as client:
         try:
             # --- OPENAI / DEEPSEEK (Compatible APIs) ---
@@ -82,7 +87,7 @@ async def generate_script(request: GenerateRequest):
                 
                 if response.status_code != 200:
                     raise HTTPException(status_code=response.status_code, detail=response.text)
-                
+                    
                 data = response.json()
                 content = data["choices"][0]["message"]["content"]
                 return {"content": content}
@@ -90,6 +95,7 @@ async def generate_script(request: GenerateRequest):
             # --- GEMINI ---
             elif provider == "gemini":
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+                
                 response = await client.post(
                     url,
                     headers={"Content-Type": "application/json"},
@@ -99,7 +105,7 @@ async def generate_script(request: GenerateRequest):
                         }]
                     }
                 )
-                
+
                 if response.status_code != 200:
                     raise HTTPException(status_code=response.status_code, detail=response.text)
                     
@@ -109,10 +115,10 @@ async def generate_script(request: GenerateRequest):
                     return {"content": content}
                 except (KeyError, IndexError):
                     return {"content": "Error parsing Gemini response. Please try again."}
-
+            
             else:
                 raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider}")
-
+                
         except httpx.RequestError as e:
             print(f"Request Error: {e}")
             raise HTTPException(status_code=503, detail="Failed to connect to AI provider.")
@@ -123,3 +129,4 @@ async def generate_script(request: GenerateRequest):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+                
