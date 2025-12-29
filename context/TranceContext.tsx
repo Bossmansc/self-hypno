@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+ import React, { createContext, useContext, useEffect, useState } from 'react';
 
 // PRODUCTION BACKEND URL
 const DEFAULT_BACKEND_URL = "https://self-hypno-1.onrender.com";
@@ -115,9 +115,11 @@ export const TranceProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [currentScreen, setCurrentScreen] = useState<'DASHBOARD' | 'PLAYER' | 'EDITOR' | 'PROFILE' | 'DISCOVERY'>('DASHBOARD');
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
-  const [activeProvider, setActiveProviderState] = useState<AIProvider>('openai');
+  
+  // FIXED: Default to DeepSeek
+  const [activeProvider, setActiveProviderState] = useState<AIProvider>('deepseek');
+  
   const [userProfile, setUserProfile] = useState<UserProfile>(DEFAULT_PROFILE);
-  // Fixed backend URL
   const backendUrl = DEFAULT_BACKEND_URL;
 
   useEffect(() => {
@@ -125,7 +127,6 @@ export const TranceProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const storedSessions = localStorage.getItem('trance_sessions');
       const storedCommunity = localStorage.getItem('trance_community');
       const storedFavs = localStorage.getItem('trance_favs');
-      const storedProvider = localStorage.getItem('trance_active_provider');
       const storedProfile = localStorage.getItem('trance_user_profile');
       const storedSettings = localStorage.getItem('trance_settings'); 
       
@@ -138,7 +139,6 @@ export const TranceProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       else setCommunitySessions(MOCK_COMMUNITY);
       
       if (storedFavs) setFavorites(JSON.parse(storedFavs));
-      if (storedProvider) setActiveProviderState(storedProvider as AIProvider);
       if (storedProfile) setUserProfile({ ...DEFAULT_PROFILE, ...JSON.parse(storedProfile) });
       if (storedSettings) setSettings(prev => ({ ...DEFAULT_SETTINGS, ...JSON.parse(storedSettings) })); 
     } catch (e) { console.error("Failed to load data", e); }
@@ -148,10 +148,9 @@ export const TranceProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     localStorage.setItem('trance_sessions', JSON.stringify(sessions));
     localStorage.setItem('trance_community', JSON.stringify(communitySessions));
     localStorage.setItem('trance_favs', JSON.stringify(favorites));
-    localStorage.setItem('trance_active_provider', activeProvider);
     localStorage.setItem('trance_user_profile', JSON.stringify(userProfile));
     localStorage.setItem('trance_settings', JSON.stringify(settings)); 
-  }, [sessions, communitySessions, favorites, activeProvider, userProfile, settings]);
+  }, [sessions, communitySessions, favorites, userProfile, settings]);
 
   const navTo = (screen: any) => setCurrentScreen(screen);
   
@@ -252,3 +251,4 @@ export const useTrance = () => {
   if (!context) throw new Error("useTrance must be used within TranceProvider");
   return context;
 };
+   
