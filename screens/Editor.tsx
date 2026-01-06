@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useTrance, UserProfile } from '../context/TranceContext';
 import { useToast } from '../context/ToastContext';
-import { X, Wand2, Save, ArrowLeft, RefreshCw, AlertTriangle, FileText, Check, LayoutTemplate, Activity, Split, BarChart2, Brain, Wind, Thermometer } from 'lucide-react';
+import { 
+  X, Wand2, Save, ArrowLeft, RefreshCw, 
+  LayoutTemplate, Activity, Split, Brain, 
+  Wind, Thermometer, Folder, FileText
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SCRIPT_TEMPLATES, CATEGORIES, ScriptTemplate } from '../data/templates';
 import Modal from '../components/Modal';
@@ -11,6 +15,7 @@ const METAPHORS = ['Nature/Water', 'Mechanical', 'Journey', 'Body-awareness', 'C
 const VOICES = ['Nurturing', 'Authoritative', 'Neutral', 'Coaching'];
 const LENGTHS = ['5 min', '10 min', '15 min', '20 min'];
 const ICONS = ['🧘', '🌙', '🧠', '🌿', '🔥', '🌊', '⭐', '👁️', '🔮', '💤'];
+
 const NEGATIVE_WORDS = /\b(no|not|don't|can't|won't|never|pain|anxiety|fear|hurt|stop|quit)\b/gi;
 const VISUAL_WORDS = /\b(see|look|vision|bright|color|picture|imagine|visualize|clear|light)\b/gi;
 const AUDITORY_WORDS = /\b(hear|sound|listen|voice|music|quiet|loud|silence|tone)\b/gi;
@@ -59,6 +64,7 @@ export default function Editor() {
   const { navTo, saveSession, sessions, editingSessionId, activeProvider, userProfile, backendUrl } = useTrance();
   const { showToast } = useToast();
   const [step, setStep] = useState<'BUILD' | 'TEMPLATES' | 'EDIT'>('BUILD');
+  
   const [config, setConfig] = useState<ScriptConfig>(INITIAL_CONFIG);
   const [title, setTitle] = useState('');
   const [icon, setIcon] = useState('🧘');
@@ -98,7 +104,7 @@ export default function Editor() {
     const visualCount = (text.match(VISUAL_WORDS) || []).length;
     const auditoryCount = (text.match(AUDITORY_WORDS) || []).length;
     const kinestheticCount = (text.match(KINESTHETIC_WORDS) || []).length;
-    
+
     let score = 100;
     score -= (negativeCount * 5);
     score += Math.min(20, (visualCount + auditoryCount + kinestheticCount) / 2);
@@ -135,15 +141,13 @@ export default function Editor() {
     if(config.features.binaural) featuresList.push("Include [BINAURAL: X Hz] markers for audio engine");
     if(config.features.trigger) featuresList.push("Install post-hypnotic trigger");
     if(config.features.future) featuresList.push("Include future pacing");
-    
-    // Inject User Profile Anchors
+
     const anchors = userProfile.anchors;
     if(anchors.place) featuresList.push(`Safe Place: ${anchors.place}`);
     if(anchors.color) featuresList.push(`Power Color: ${anchors.color}`);
     if(anchors.smell && config.features.olfactory) featuresList.push(`Olfactory Cue: ${anchors.smell}`);
     if(anchors.safeObj) featuresList.push(`Protective Object: ${anchors.safeObj}`);
-    
-    // Inject Learning Style
+
     let styleInstruction = "";
     switch(userProfile.learningStyle) {
       case 'Visual': styleInstruction = "Use vivid visual imagery (colors, light, scenes)."; break;
@@ -152,7 +156,6 @@ export default function Editor() {
       case 'Digital': styleInstruction = "Use logical, structured, and cause-effect language."; break;
     }
 
-    // Inject Resistance Level
     let resistanceInstruction = "";
     switch(userProfile.resistanceLevel) {
       case 'Suggestible': resistanceInstruction = "Use direct, authoritative suggestions."; break;
@@ -175,10 +178,10 @@ export default function Editor() {
     - Voice: ${config.voice}
     - Depth: ${intensityLabel}
     - Required Elements: ${featuresList.join(', ')}
-    
+
     **PERSONAL HISTORY:**
     ${memoryNote}
-    
+
     **FORMATTING:**
     - Use [PAUSE X] tags for silence (e.g. [PAUSE 5]).
     - Write in present tense.
@@ -191,17 +194,13 @@ export default function Editor() {
     const systemPrompt = "You are an expert clinical hypnotherapist who adapts perfectly to user psychology.";
 
     try {
-      // Force backend usage for production security
       const endpoint = `${backendUrl}/generate`;
       
-      console.log(`Generating via Secure Backend: ${endpoint}`);
-
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
-          provider: activeProvider, 
-          // api_key is NOT sent. The backend uses its own environment variables.
+          provider: 'deepseek', 
           system_prompt: systemPrompt, 
           user_prompt: userPrompt 
         })
@@ -209,14 +208,16 @@ export default function Editor() {
 
       if(!res.ok) {
           const errorText = await res.text();
-          throw new Error(`Server Error: ${errorText}`);
+          console.error("AI Generation Error:", errorText);
+          const errorJson = JSON.parse(errorText || '{}');
+          throw new Error(errorJson.detail || `Server Error (${res.status}): ${errorText}`);
       }
-      
+
       const data = await res.json();
       const generatedText = data.content;
 
       if(!generatedText) throw new Error("Received empty response from AI");
-      
+
       setScript(generatedText);
       if(!title) setTitle(`${config.goal} (${config.length})`);
       setStep('EDIT');
@@ -259,25 +260,41 @@ export default function Editor() {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-[#1a1a2e] z-50 overflow-hidden">
-      {/* HEADER */}
+      {/* Header */}
       <div className="px-5 pt-12 pb-4 flex justify-between items-center bg-[#121212]/95 backdrop-blur-md border-b border-white/5 z-20">
         <button onClick={() => step !== 'BUILD' ? setStep('BUILD') : navTo('DASHBOARD')} className="p-2 rounded-full hover:bg-white/10">
           {step !== 'BUILD' ? <ArrowLeft className="text-slate-300" /> : <X className="text-slate-300" />}
         </button>
+        
         <div className="flex gap-2 bg-white/5 rounded-full p-1">
-          <button onClick={() => setStep('BUILD')} className={`px-4 py-1 rounded-full text-xs font-bold transition-all ${step === 'BUILD' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>AI BUILD</button>
-          <button onClick={() => setStep('TEMPLATES')} className={`px-4 py-1 rounded-full text-xs font-bold transition-all ${step === 'TEMPLATES' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>TEMPLATES</button>
-          <button onClick={() => setStep('EDIT')} className={`px-4 py-1 rounded-full text-xs font-bold transition-all ${step === 'EDIT' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>EDITOR</button>
+          <button 
+            onClick={() => setStep('BUILD')} 
+            className={`px-4 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-2 ${step === 'BUILD' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}
+          >
+            <Brain size={14} /> AI BUILD
+          </button>
+          <button 
+            onClick={() => setStep('TEMPLATES')} 
+            className={`px-4 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-2 ${step === 'TEMPLATES' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}
+          >
+            <Folder size={14} /> TEMPLATES
+          </button>
+          <button 
+            onClick={() => setStep('EDIT')} 
+            className={`px-4 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-2 ${step === 'EDIT' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}
+          >
+            <FileText size={14} /> EDITOR
+          </button>
         </div>
+
         <button onClick={() => handleSave(false)} className="p-2 rounded-full hover:bg-white/10 text-indigo-400">
           <Save size={20} />
         </button>
       </div>
 
-      {/* BODY */}
+      {/* Content */}
       <div className="flex-1 overflow-y-auto bg-gradient-to-b from-[#1a1a2e] to-[#16213e]">
         <AnimatePresence mode='wait'>
-          
           {/* BUILD MODE */}
           {step === 'BUILD' && (
             <motion.div key="build" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="p-6 space-y-8 max-w-2xl mx-auto">
@@ -379,7 +396,7 @@ export default function Editor() {
             </motion.div>
           )}
 
-          {/* EDIT MODE */}
+          {/* EDITOR MODE */}
           {step === 'EDIT' && (
             <motion.div key="edit" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="flex flex-col h-full max-w-4xl mx-auto">
               <div className="p-4 grid grid-cols-[auto_1fr] gap-4 items-center bg-[#1a1a2e]">
@@ -392,7 +409,7 @@ export default function Editor() {
                 </div>
                 <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Session Title" className="w-full bg-transparent text-xl font-light text-white placeholder:text-slate-600 outline-none border-b border-white/10 focus:border-indigo-500 pb-2 transition-all" />
               </div>
-              
+
               <div className="flex-1 relative">
                 <textarea 
                   value={script} 
@@ -411,6 +428,7 @@ export default function Editor() {
                   <button onClick={analyzeScript} className="p-2 text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors flex items-center gap-2">
                     <Activity size={16} /> <span className="text-xs">Analyze</span>
                   </button>
+                  
                   {editingSessionId && (
                     <button onClick={() => handleSave(true)} className="p-2 text-indigo-400 hover:text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-lg transition-colors flex items-center gap-2">
                       <Split size={16} /> <span className="text-xs">Save Variant</span>
@@ -423,25 +441,28 @@ export default function Editor() {
         </AnimatePresence>
       </div>
 
-      {/* GENERATE BUTTON */}
+      {/* Generator Button (Floating) */}
       {step === 'BUILD' && (
-        <div className="absolute bottom-8 left-0 right-0 flex justify-center px-6">
+        <div className="absolute bottom-8 left-0 right-0 flex flex-col items-center justify-center px-6 pointer-events-none">
           <motion.button
             whileTap={{ scale: 0.95 }}
             onClick={generateWithAI}
             disabled={isGenerating}
-            className={`w-full max-w-md py-4 rounded-xl font-bold shadow-xl shadow-indigo-900/50 flex items-center justify-center gap-3 transition-all ${isGenerating ? 'bg-slate-700 text-slate-400 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:brightness-110'}`}
+            className={`pointer-events-auto w-full max-w-md py-4 rounded-xl font-bold shadow-xl shadow-indigo-900/50 flex items-center justify-center gap-3 transition-all ${isGenerating ? 'bg-slate-700 text-slate-400 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:brightness-110'}`}
           >
             {isGenerating ? (
               <> <RefreshCw className="animate-spin" /> Generating... </>
             ) : (
-              <> <Wand2 /> Generate Script </>
+              <> <Wand2 /> Generate Script (DeepSeek) </>
             )}
           </motion.button>
+          <div className="text-[10px] text-slate-500 mt-2 bg-black/40 px-2 py-1 rounded backdrop-blur-sm pointer-events-auto">
+             Using DeepSeek • {backendUrl.includes('render') ? 'Cloud API' : 'Local API'}
+          </div>
         </div>
       )}
 
-      {/* ANALYSIS MODAL */}
+      {/* Analysis Modal */}
       <Modal isOpen={showAnalyzer} onClose={() => setShowAnalyzer(false)} title="Script Analysis">
         {analysis && (
           <div className="space-y-6">
@@ -458,12 +479,14 @@ export default function Editor() {
                 <p className="text-xs text-slate-400">Based on sensory language density and positive phrasing.</p>
               </div>
             </div>
+
             <div className="grid grid-cols-2 gap-3">
               <StatBox label="Visual Words" value={analysis.visualCount} color="text-pink-400" />
               <StatBox label="Auditory Words" value={analysis.auditoryCount} color="text-blue-400" />
               <StatBox label="Kinesthetic Words" value={analysis.kinestheticCount} color="text-emerald-400" />
               <StatBox label="Negative Words" value={analysis.negativeCount} color="text-red-400" alert={analysis.negativeCount > 3} />
             </div>
+
             <div className="p-3 bg-white/5 rounded-lg border border-white/10">
               <div className="text-xs text-slate-500 uppercase font-bold mb-2">Recommendations</div>
               <ul className="text-sm text-slate-300 space-y-1 list-disc list-inside">

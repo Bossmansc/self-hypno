@@ -1,15 +1,16 @@
 import React, { useState, useRef } from 'react';
 import { useTrance, UserAnchors } from '../context/TranceContext';
 import { useToast } from '../context/ToastContext';
-import { X, Download, RotateCcw, FileUp, Brain, MapPin, Palette } from 'lucide-react';
+import { X, Download, RotateCcw, FileUp, Brain, MapPin, Palette, Cpu } from 'lucide-react';
 import Modal from '../components/Modal';
 import { motion } from 'framer-motion';
 
 export default function Profile() {
-  const { navTo, resetData, importData, exportData, userProfile, updateUserProfile, updateUserAnchors } = useTrance();
+  const { navTo, resetData, importData, exportData, userProfile, updateUserProfile, updateUserAnchors, backendUrl } = useTrance();
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [activeModal, setActiveModal] = useState<'NONE' | 'ASSESSMENT' | 'ANCHORS' | 'EXPORT'>('NONE');
+  
+  const [activeModal, setActiveModal] = useState<'NONE' | 'ASSESSMENT' | 'ANCHORS' | 'EXPORT' | 'SETTINGS'>('NONE');
   const [exportContent, setExportContent] = useState('');
 
   const handleAssessmentSave = (style: any, resistance: any) => {
@@ -67,16 +68,35 @@ export default function Profile() {
         <div className="w-10"/>
       </div>
 
-      <div className="p-6 flex flex-col items-center overflow-y-auto">
-        {/* HEADER CARD */}
+      <div className="p-6 flex flex-col items-center overflow-y-auto pb-20">
+        {/* Header Card */}
         <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="w-full bg-gradient-to-br from-indigo-900/40 to-purple-900/20 rounded-3xl p-8 mb-8 text-center border border-white/10">
           <h2 className="text-4xl font-thin text-white mb-2">{userProfile.learningStyle}</h2>
           <p className="text-indigo-200 font-light text-sm">{userProfile.resistanceLevel} Responder</p>
         </motion.div>
 
         <div className="w-full space-y-4">
-          {/* PERSONALIZATION */}
-          <div className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-2 mb-2">Personalization</div>
+          {/* AI Settings Section */}
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-2 mb-2">System & Intelligence</div>
+          
+          <div className="bg-white/5 rounded-2xl border border-white/5 p-4 space-y-4">
+            <div>
+              <div className="flex items-center gap-2 text-white mb-2">
+                <Cpu size={18} className="text-indigo-400" />
+                <span className="font-medium">Active Intelligence</span>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-indigo-900/20 rounded-xl border border-indigo-500/30">
+                <span className="text-sm text-indigo-200 font-bold">DeepSeek AI</span>
+                <span className="px-2 py-1 bg-indigo-500/20 text-indigo-300 text-[10px] rounded uppercase tracking-wider font-bold">Connected</span>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-2">
+                Backend: <span className="font-mono text-slate-400">{backendUrl}</span>
+              </p>
+            </div>
+          </div>
+
+          {/* Personalization Section */}
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-2 mt-4 mb-2">Personalization</div>
           
           <button onClick={() => setActiveModal('ASSESSMENT')} className="w-full py-4 bg-white/5 rounded-2xl text-white flex items-center px-6 gap-4 hover:bg-white/10 transition-all border border-white/5">
             <Brain className="text-pink-400" size={24} />
@@ -94,7 +114,7 @@ export default function Profile() {
             </div>
           </button>
 
-          {/* SYSTEM / DATA */}
+          {/* Data Section */}
           <div className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-2 mt-6 mb-2">Data & Backup</div>
           
           <div className="grid grid-cols-2 gap-4 mt-2">
@@ -114,12 +134,11 @@ export default function Profile() {
         </div>
       </div>
 
-      {/* MODALS */}
-      
+      {/* Modals */}
       <Modal isOpen={activeModal === 'ASSESSMENT'} onClose={() => setActiveModal('NONE')} title="Psychographic Profile">
         <AssessmentForm initialStyle={userProfile.learningStyle} initialRes={userProfile.resistanceLevel} onSave={handleAssessmentSave} />
       </Modal>
-      
+
       <Modal isOpen={activeModal === 'ANCHORS'} onClose={() => setActiveModal('NONE')} title="Personal Anchors">
         <AnchorsForm initialAnchors={userProfile.anchors} onSave={handleAnchorsSave} />
       </Modal>
@@ -135,6 +154,7 @@ export default function Profile() {
 const AssessmentForm = ({ initialStyle, initialRes, onSave }: any) => {
   const [style, setStyle] = useState(initialStyle);
   const [res, setRes] = useState(initialRes);
+
   return (
     <div className="space-y-6">
       <div>
@@ -153,6 +173,7 @@ const AssessmentForm = ({ initialStyle, initialRes, onSave }: any) => {
           ))}
         </div>
       </div>
+
       <div>
         <label className="text-sm text-slate-400 block mb-3">How do you process suggestions?</label>
         <div className="space-y-2">
@@ -163,6 +184,7 @@ const AssessmentForm = ({ initialStyle, initialRes, onSave }: any) => {
           ))}
         </div>
       </div>
+
       <button onClick={() => onSave(style, res)} className="w-full py-3 bg-indigo-600 rounded-xl text-white font-medium hover:bg-indigo-500">Save Profile</button>
     </div>
   );
@@ -171,6 +193,7 @@ const AssessmentForm = ({ initialStyle, initialRes, onSave }: any) => {
 const AnchorsForm = ({ initialAnchors, onSave }: any) => {
   const [anchors, setAnchors] = useState<UserAnchors>(initialAnchors);
   const handleChange = (k: keyof UserAnchors, v: string) => setAnchors(p => ({ ...p, [k]: v }));
+
   return (
     <div className="space-y-4">
       <p className="text-xs text-slate-400 mb-2">The AI will weave these specific details into your scripts for deeper effect.</p>
@@ -179,6 +202,7 @@ const AnchorsForm = ({ initialAnchors, onSave }: any) => {
       <Input label="Comforting Smell" value={anchors.smell} onChange={v => handleChange('smell', v)} placeholder="e.g. Lavender, Old Books" />
       <Input label="Success Memory" value={anchors.success} onChange={v => handleChange('success', v)} placeholder="e.g. Winning the race" />
       <Input label="Protective Object" value={anchors.safeObj} onChange={v => handleChange('safeObj', v)} placeholder="e.g. A heavy blanket" />
+      
       <button onClick={() => onSave(anchors)} className="w-full py-3 bg-indigo-600 rounded-xl text-white font-medium hover:bg-indigo-500 mt-4">Save Anchors</button>
     </div>
   );

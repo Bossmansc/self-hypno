@@ -1,6 +1,5 @@
- import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 
-// PRODUCTION BACKEND URL
 const DEFAULT_BACKEND_URL = "https://self-hypno-1.onrender.com";
 
 export interface Session {
@@ -29,7 +28,7 @@ export interface Settings {
   breathingEnabled: boolean; 
 }
 
-export type AIProvider = 'openai' | 'gemini' | 'deepseek';
+export type AIProvider = 'deepseek';
 
 export interface UserAnchors {
   place: string;
@@ -115,10 +114,7 @@ export const TranceProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [currentScreen, setCurrentScreen] = useState<'DASHBOARD' | 'PLAYER' | 'EDITOR' | 'PROFILE' | 'DISCOVERY'>('DASHBOARD');
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
-  
-  // FIXED: Default to DeepSeek
   const [activeProvider, setActiveProviderState] = useState<AIProvider>('deepseek');
-  
   const [userProfile, setUserProfile] = useState<UserProfile>(DEFAULT_PROFILE);
   const backendUrl = DEFAULT_BACKEND_URL;
 
@@ -127,6 +123,7 @@ export const TranceProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const storedSessions = localStorage.getItem('trance_sessions');
       const storedCommunity = localStorage.getItem('trance_community');
       const storedFavs = localStorage.getItem('trance_favs');
+      // We ignore storedProvider to enforce deepseek
       const storedProfile = localStorage.getItem('trance_user_profile');
       const storedSettings = localStorage.getItem('trance_settings'); 
       
@@ -137,8 +134,9 @@ export const TranceProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       if (storedCommunity) setCommunitySessions(JSON.parse(storedCommunity));
       else setCommunitySessions(MOCK_COMMUNITY);
-      
       if (storedFavs) setFavorites(JSON.parse(storedFavs));
+      // Force deepseek
+      setActiveProviderState('deepseek'); 
       if (storedProfile) setUserProfile({ ...DEFAULT_PROFILE, ...JSON.parse(storedProfile) });
       if (storedSettings) setSettings(prev => ({ ...DEFAULT_SETTINGS, ...JSON.parse(storedSettings) })); 
     } catch (e) { console.error("Failed to load data", e); }
@@ -148,9 +146,10 @@ export const TranceProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     localStorage.setItem('trance_sessions', JSON.stringify(sessions));
     localStorage.setItem('trance_community', JSON.stringify(communitySessions));
     localStorage.setItem('trance_favs', JSON.stringify(favorites));
+    localStorage.setItem('trance_active_provider', 'deepseek');
     localStorage.setItem('trance_user_profile', JSON.stringify(userProfile));
     localStorage.setItem('trance_settings', JSON.stringify(settings)); 
-  }, [sessions, communitySessions, favorites, userProfile, settings]);
+  }, [sessions, communitySessions, favorites, activeProvider, userProfile, settings]);
 
   const navTo = (screen: any) => setCurrentScreen(screen);
   
@@ -167,8 +166,9 @@ export const TranceProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const setActiveProvider = (provider: AIProvider) => setActiveProviderState(provider);
   const updateUserProfile = (profile: Partial<UserProfile>) => setUserProfile(prev => ({ ...prev, ...profile }));
   const updateUserAnchors = (anchors: Partial<UserAnchors>) => setUserProfile(prev => ({ ...prev, anchors: { ...prev.anchors, ...anchors } }));
+  
   const toggleFavorite = (id: string) => setFavorites(prev => prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]);
-
+  
   const saveSession = (newSession: Session) => {
     setSessions(prev => {
       const index = prev.findIndex(s => s.id === newSession.id);
@@ -182,8 +182,9 @@ export const TranceProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const rateSession = (id: string, rating: number) => setSessions(prev => prev.map(s => s.id === id ? { ...s, rating } : s));
+  
   const deleteSession = (id: string) => { setSessions(prev => prev.filter(s => s.id !== id)); if (activeSessionId === id) setActiveSessionId(null); };
-
+  
   const publishSession = (id: string, authorName: string) => {
     const session = sessions.find(s => s.id === id);
     if (!session) return;
@@ -211,13 +212,15 @@ export const TranceProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const exportData = () => JSON.stringify(sessions, null, 2);
-
+  
   const importData = (json: string) => {
     try {
       const parsed = JSON.parse(json);
       const dataToImport = Array.isArray(parsed) ? parsed : [parsed];
       const validSessions = dataToImport.filter(s => s.id && s.title && s.script);
+      
       if (validSessions.length === 0) return false;
+
       setSessions(prev => {
         const newSessions = [...prev];
         validSessions.forEach(importedSession => {
@@ -251,4 +254,3 @@ export const useTrance = () => {
   if (!context) throw new Error("useTrance must be used within TranceProvider");
   return context;
 };
-   
