@@ -24,15 +24,20 @@ export const useAudioEngine = ({
   const [currentFreq, setCurrentFreq] = useState(settings.binauralFreq);
   const isPlayingRef = useRef(false);
   
-  // Shared Audio Context Manager
   const audioCtxRef = useRef<AudioContext | null>(null);
 
   const initAudioContext = useCallback(() => {
-    if (!audioCtxRef.current) {
+    if (!audioCtxRef.current && typeof window !== 'undefined') {
       const Ctx = window.AudioContext || (window as any).webkitAudioContext;
-      audioCtxRef.current = new Ctx();
+      if (Ctx) {
+        try {
+          audioCtxRef.current = new Ctx();
+        } catch (e) {
+          console.error("Failed to create AudioContext", e);
+        }
+      }
     }
-    if (audioCtxRef.current.state === 'suspended') {
+    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
       audioCtxRef.current.resume().catch(e => console.warn("Audio resume failed", e));
     }
   }, []);
@@ -66,18 +71,16 @@ export const useAudioEngine = ({
     setIsPlaying 
   });
 
-  // Direct sync: Frequency is now fully controlled by the user slider (settings)
-  // No more protocol engine overriding this.
+  // Sync settings
   useEffect(() => {
     setCurrentFreq(settings.binauralFreq);
   }, [settings.binauralFreq]);
 
-  // Volume updates
   useEffect(() => {
     updateSoundscapeVolume(settings.ambVol);
   }, [settings.ambVol, updateSoundscapeVolume]);
 
-  // Handle Entrainment Lifecycle
+  // Handle entrainment changes
   useEffect(() => {
     if (isPlayingRef.current) {
       initEntrainment(); 
@@ -88,23 +91,19 @@ export const useAudioEngine = ({
 
   const togglePlay = useCallback(() => {
     if (isPlayingRef.current) {
-      // Pause
+      // STOP
       isPlayingRef.current = false;
       setIsPlaying(false);
       pauseTTS(); 
       playSoundscape('none');
       stopEntrainment();
     } else {
-      // Play
+      // START
       initAudioContext();
       isPlayingRef.current = true;
       setIsPlaying(true);
-      
-      // Sync frequency immediately on start
       setCurrentFreq(settings.binauralFreq);
-      
       playTTS();
-      
       if (activeSoundscape !== 'none') {
         playSoundscape(activeSoundscape as any);
       }
@@ -112,7 +111,7 @@ export const useAudioEngine = ({
     }
   }, [playTTS, pauseTTS, playSoundscape, initAudioContext, activeSoundscape, initEntrainment, stopEntrainment, settings.binauralFreq]);
 
-  // Cleanup
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       isPlayingRef.current = false;
@@ -120,7 +119,9 @@ export const useAudioEngine = ({
       playSoundscape('none');
       stopEntrainment();
       if (audioCtxRef.current) {
-        audioCtxRef.current.close().catch(e => console.error(e));
+        try {
+          audioCtxRef.current.close().catch(e => console.error(e));
+        } catch(e) {}
         audioCtxRef.current = null;
       }
     };

@@ -40,36 +40,43 @@ export const useTTS = ({
   const actionQueueRef = useRef<TTSAction[]>([]);
   const currentActionIndexRef = useRef(0);
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
-  const synthRef = useRef<SpeechSynthesis>(window.speechSynthesis);
+  
+  // Safely initialize synthRef
+  const synthRef = useRef<SpeechSynthesis | null>(
+    typeof window !== 'undefined' ? window.speechSynthesis : null
+  );
+  
   const timeoutRef = useRef<number | null>(null);
   const lastScriptRef = useRef<string>('');
   
-  // Keep refs for callbacks to avoid dependency cycles
   const onLineChangeRef = useRef(onLineChange);
   const onCompleteRef = useRef(onComplete);
 
   useEffect(() => { onLineChangeRef.current = onLineChange; }, [onLineChange]);
   useEffect(() => { onCompleteRef.current = onComplete; }, [onComplete]);
 
-  // Ensure voices are loaded (Mobile fix)
+  // Safer voice loading
   useEffect(() => {
+    if (!synthRef.current) return;
+
     const loadVoices = () => {
-      window.speechSynthesis.getVoices();
+      synthRef.current?.getVoices();
     };
+
     loadVoices();
-    // Some mobile browsers need a nudge
-    if (window.speechSynthesis.onvoiceschanged !== undefined) {
-      const prev = window.speechSynthesis.onvoiceschanged;
-      window.speechSynthesis.onvoiceschanged = (e) => {
-        loadVoices();
-        if (prev) (prev as any)(e);
-      };
+    
+    // Use a polling fallback instead of dangerous chaining
+    const interval = setInterval(loadVoices, 1000);
+    
+    if (synthRef.current.onvoiceschanged !== undefined) {
+      synthRef.current.onvoiceschanged = loadVoices;
     }
+
+    return () => clearInterval(interval);
   }, []);
 
   const parseScript = useCallback((script: string): TTSAction[] => {
     const actions: TTSAction[] = [];
-    // Split by sentence endings but keep delimiters
     const sentences = script.match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g) || [script];
     
     let currentRate = 1.0;
@@ -81,7 +88,6 @@ export const useTTS = ({
       const sentence = rawSentence.trim();
       if (!sentence) return;
 
-      // Check for tags [PAUSE], [SLOW], etc.
       const parts = sentence.split(/(\[.*?\])/);
       
       parts.forEach(part => {
@@ -96,7 +102,6 @@ export const useTTS = ({
             return;
           }
 
-          // Voice modulation tags
           if (content === 'SLOW') currentRate = 0.7;
           else if (content === 'FAST') currentRate = 1.3;
           else if (content === 'WHISPER') currentVolume = 0.3;
@@ -107,13 +112,11 @@ export const useTTS = ({
           else if (content === 'RIGHT') currentPan = 1;
           else if (content === 'CENTER') currentPan = 0;
           
-          // Reset tags
           else if (content === '/SLOW' || content === '/FAST') currentRate = 1.0;
           else if (content === '/WHISPER' || content === '/LOUD') currentVolume = 1.0;
           else if (content === '/UP' || content === '/DOWN') currentPitch = 1.0;
           else if (content === '/LEFT' || content === '/RIGHT') currentPan = 0;
           
-          // Emotional presets
           else if (EMOTIONAL_TONES[content]) {
             const tone = EMOTIONAL_TONES[content];
             currentRate = tone.rate;
@@ -137,7 +140,6 @@ export const useTTS = ({
         });
       });
 
-      // Implicit pause after sentence
       actions.push({ id: `eos-${index}`, type: 'IMPLICIT_PAUSE', originalIndex: index });
     });
 
@@ -156,16 +158,18 @@ export const useTTS = ({
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
-    if (currentUtteranceRef.current) {
+    
+    if (currentUtteranceRef.current && synthRef.current) {
       currentUtteranceRef.current.onend = null;
       currentUtteranceRef.current.onerror = null;
       currentUtteranceRef.current = null;
       synthRef.current.cancel();
-      // Step back one action so we resume correctly
+      
+      // Step back one index so we resume at the start of the current sentence
       if (currentActionIndexRef.current > 0) {
         currentActionIndexRef.current--;
       }
-    } else {
+    } else if (synthRef.current) {
       synthRef.current.cancel();
     }
   }, []);
@@ -178,6 +182,7 @@ export const useTTS = ({
   }, [pause]);
 
   const processorRef = useRef<() => void>(() => {});
+  
   processorRef.current = () => {
     if (!isPlayingRef.current) return;
 
@@ -192,7 +197,6 @@ export const useTTS = ({
 
     const action = queue[idx];
     
-    // Update UI active line
     if (action.originalIndex !== undefined && onLineChangeRef.current) {
       onLineChangeRef.current(action.originalIndex);
     }
@@ -211,63 +215,63 @@ export const useTTS = ({
     if (pauseDuration > 0) {
       timeoutRef.current = window.setTimeout(processorRef.current, pauseDuration);
     } else if (action.type === 'SPEAK' && action.text) {
+      if (!synthRef.current) {
+        // TTS not available, skip
+        timeoutRef.current = window.setTimeout(processorRef.current, 100);
+        return;
+      }
+
       const u = new SpeechSynthesisUtterance(action.text);
       currentUtteranceRef.current = u;
-      
-      // --- MOBILE VOICE FIX ---
+
+      // Voice Selection
       if (settings.selectedVoiceURI) {
         let voices = synthRef.current.getVoices();
         
-        // Retry fetch if empty (Mobile quirk)
-        if (voices.length === 0) {
+        // Fallback if empty (common issue)
+        if (voices.length === 0 && window.speechSynthesis) {
            voices = window.speechSynthesis.getVoices(); 
         }
 
-        // Try exact match by URI
         let selected = voices.find(v => v.voiceURI === settings.selectedVoiceURI);
         
-        // Fallback: Try match by name if URI format differs slightly
+        // Fuzzy match
         if (!selected && settings.selectedVoiceURI) {
-             // Extract name part if URI contains it (sometimes they differ on mobile)
              const targetName = voices.find(v => settings.selectedVoiceURI?.includes(v.name));
              if (targetName) selected = targetName;
         }
 
         if (selected) {
           u.voice = selected;
-          u.lang = selected.lang; // Explicitly set lang for mobile
+          u.lang = selected.lang; 
         }
       }
-      // ------------------------
 
-      // Binaural Pacing Compensation
+      // Binaural Pacing
       let pacing = 1.0;
       if (settings.binauralEnabled) {
         if (settings.binauralFreq <= 4) pacing = 0.8; // Slow down for Delta
-        else if (settings.binauralFreq <= 8) pacing = 0.9; // Slow down for Theta
+        else if (settings.binauralFreq <= 8) pacing = 0.9; // Slight slow for Theta
       }
 
       u.rate = (action.options?.rate || 1.0) * settings.speed * pacing;
       u.pitch = action.options?.pitch || 1.0;
       u.volume = (action.options?.volume || 1.0) * settings.voiceVol;
 
-      // Handle stereo panning (Experimental, usually ignored by standard TTS)
-      // if (action.options?.pan !== 0) { ... } 
-
       const handleEnd = () => {
         currentUtteranceRef.current = null;
         if (isPlayingRef.current) {
-          // Small buffer between sentences for natural flow
           timeoutRef.current = window.setTimeout(processorRef.current, 10); 
         }
       };
 
       u.onend = handleEnd;
+      
       u.onerror = (e) => {
         currentUtteranceRef.current = null;
         console.warn("TTS Error:", e);
-        // Continue despite error
         if (isPlayingRef.current) {
+          // Continue despite error
           timeoutRef.current = window.setTimeout(processorRef.current, 100);
         }
       };
@@ -277,19 +281,17 @@ export const useTTS = ({
         if (synthRef.current.paused) synthRef.current.resume();
       } catch (e) {
         console.error("TTS Speak failed", e);
-        // Skip faulty action
         timeoutRef.current = window.setTimeout(processorRef.current, 500);
       }
     } else {
-      // Just in case of unknown action
+      // Unknown action or fallback
       processorRef.current();
     }
   };
 
   const play = useCallback(() => {
     if (!activeScript) return;
-    
-    // Parse if new script
+
     if (activeScript !== lastScriptRef.current || actionQueueRef.current.length === 0) {
       reset(); 
       actionQueueRef.current = parseScript(activeScript);
