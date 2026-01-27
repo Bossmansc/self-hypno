@@ -1,5 +1,5 @@
 import React from 'react';
-import { Heart, Edit2, Trash2, Upload } from 'lucide-react';
+import { Heart, Edit2, Trash2 } from 'lucide-react';
 import { Session } from '../context/TranceContext';
 
 interface Props {
@@ -8,11 +8,10 @@ interface Props {
   onToggleFav: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
-  onPublish?: () => void;
   onPlay: () => void;
 }
 
-export default function SessionCard({ session, isFav, onToggleFav, onEdit, onDelete, onPublish, onPlay }: Props) {
+export default function SessionCard({ session, isFav, onToggleFav, onEdit, onDelete, onPlay }: Props) {
   return (
     <div className="group relative flex items-center bg-white/5 border border-white/5 rounded-2xl mb-4 overflow-hidden transition-all hover:bg-white/10">
       <div 
@@ -29,15 +28,6 @@ export default function SessionCard({ session, isFav, onToggleFav, onEdit, onDel
       </div>
 
       <div className="flex items-center gap-1 pr-3 sm:pr-4 shrink-0 z-10">
-        {onPublish && (
-          <button 
-            onClick={(e) => { e.stopPropagation(); onPublish(); }}
-            className="p-2 rounded-full hover:bg-white/20 text-slate-400 hover:text-indigo-400 transition-colors"
-            title="Publish to Community"
-          >
-            <Upload size={18} />
-          </button>
-        )}
         {onEdit && (
           <button 
             onClick={(e) => { e.stopPropagation(); onEdit(); }}

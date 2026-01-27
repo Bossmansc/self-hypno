@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTrance } from '../context/TranceContext';
 import { useAudioEngine } from '../hooks/audio/useAudioEngine';
-import { ArrowDown, Settings as SettingsIcon, Play, Pause, CloudRain, Wind, Flame, Headphones, Speaker } from 'lucide-react';
+import { ArrowDown, Settings as SettingsIcon, Play, Pause, CloudRain, Wind, Headphones, Speaker, MessageSquare } from 'lucide-react';
 import Modal from '../components/Modal';
 import { motion } from 'framer-motion';
 
@@ -70,14 +70,26 @@ const RangeControl = ({
 );
 
 export default function Player() {
-  const { navTo, activeSessionId, sessions, communitySessions, settings, updateSettings } = useTrance();
-  const session = sessions.find(s => s.id === activeSessionId) || communitySessions.find(s => s.id === activeSessionId);
+  const { navTo, activeSessionId, sessions, settings, updateSettings } = useTrance();
+  const session = sessions.find(s => s.id === activeSessionId);
   const [activeLine, setActiveLine] = useState(0);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [entType, setEntType] = useState<'BINAURAL' | 'ISOCHRONIC'>('BINAURAL');
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   
   const lineRefs = useRef<(HTMLParagraphElement | null)[]>([]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const fetchVoices = () => {
+      const voices = window.speechSynthesis.getVoices();
+      setAvailableVoices(voices.sort((a, b) => a.lang.localeCompare(b.lang)));
+    };
+    fetchVoices();
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = fetchVoices;
+    }
+  }, []);
 
   const handleLineChange = useCallback((index: number) => {
     setActiveLine(index);
@@ -106,7 +118,7 @@ export default function Player() {
   const scriptLines = session.script
     ? (session.script.match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g) || [session.script])
     : [];
-
+    
   const currentBrainwave = getBrainwaveInfo(currentFreq);
   const breathDuration = 60 / settings.breathingRate; 
 
@@ -131,7 +143,7 @@ export default function Player() {
 
       {/* Visualizer Area */}
       <div className="flex-1 flex flex-col items-center relative w-full overflow-hidden">
-        {/* Visual Element */}
+        
         <div className="h-[35%] w-full flex items-center justify-center relative shrink-0 z-0">
           
           {/* Ambient Glow */}
@@ -149,7 +161,16 @@ export default function Player() {
             style={{ backgroundColor: currentBrainwave.color }}
           />
 
-          {/* Breathing Guide */}
+          {/* New Rotating Reticle (Hacker Style) */}
+          {isPlaying && (
+            <motion.div 
+              animate={{ rotate: 360 }}
+              transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+              className="absolute w-[240px] h-[240px] border border-dashed border-white/10 rounded-full pointer-events-none z-0"
+            />
+          )}
+
+          {/* Breathing Circle */}
           {settings.breathingEnabled && isPlaying && (
             <motion.div 
               animate={{ 
@@ -180,7 +201,7 @@ export default function Player() {
             <div className="text-6xl filter drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]">{session.icon}</div>
           </motion.div>
 
-          {/* Live Status Info */}
+          {/* Brainwave Stats */}
           {settings.binauralEnabled && isPlaying && (
             <motion.div 
               initial={{ opacity: 0 }} 
@@ -223,15 +244,13 @@ export default function Player() {
         </div>
       </div>
 
-      {/* Controls Footer */}
+      {/* Controls */}
       <div className="p-6 pb-10 bg-[#121212]/90 backdrop-blur-xl border-t border-white/5 flex flex-col items-center gap-6 rounded-t-3xl z-30 shrink-0">
         <div className="flex gap-4">
           <SoundButton icon={<CloudRain size={20} />} active={activeSoundscape === 'rain'} onClick={() => playSoundscape('rain')} />
           <SoundButton icon={<span className="text-xl">🧘</span>} active={activeSoundscape === 'om'} onClick={() => playSoundscape('om')} />
           <SoundButton icon={<Wind size={20} />} active={activeSoundscape === 'wind'} onClick={() => playSoundscape('wind')} />
-          <SoundButton icon={<Flame size={20} />} active={activeSoundscape === 'fire'} onClick={() => playSoundscape('fire')} />
         </div>
-        
         <motion.button whileTap={{ scale: 0.95 }} onClick={togglePlay} className="w-20 h-20 bg-white text-black rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.2)] hover:shadow-[0_0_50px_rgba(255,255,255,0.4)] transition-shadow">
           {isPlaying ? <Pause size={32} fill="black" /> : <Play size={32} fill="black" className="ml-1" />}
         </motion.button>
@@ -241,7 +260,7 @@ export default function Player() {
       <Modal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} title="Audio & Entrainment">
         <div className="space-y-6">
           
-          {/* Main Toggles */}
+          {/* Quick Toggles */}
           <div className="grid grid-cols-2 gap-3">
              <div onClick={() => updateSettings({ breathingEnabled: !settings.breathingEnabled })} className={`p-3 rounded-xl border cursor-pointer transition-all ${settings.breathingEnabled ? 'bg-indigo-500/10 border-indigo-500' : 'bg-white/5 border-white/5 opacity-70'}`}>
                 <div className="flex justify-between mb-2">
@@ -262,6 +281,26 @@ export default function Player() {
              </div>
           </div>
 
+          {/* Voice Selector */}
+          <div className="pt-2 border-t border-white/5">
+             <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+               <MessageSquare size={12} /> AI Voice
+             </label>
+             <select 
+               value={settings.selectedVoiceURI || ''} 
+               onChange={(e) => updateSettings({ selectedVoiceURI: e.target.value })}
+               className="w-full bg-white/5 border border-white/10 rounded-lg p-2 text-sm text-white focus:border-indigo-500 outline-none [&>option]:bg-[#1a1a2e] [&>option]:text-white"
+             >
+                <option value="" className="bg-[#1a1a2e] text-white">Default (System)</option>
+                {availableVoices.map(v => (
+                  <option key={v.voiceURI} value={v.voiceURI} className="bg-[#1a1a2e] text-white">
+                    {v.name} ({v.lang})
+                  </option>
+                ))}
+             </select>
+          </div>
+
+          {/* Binaural Controls */}
           {settings.binauralEnabled && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="pt-2 border-t border-white/5">
               <div className="flex gap-2 mb-4">
@@ -273,7 +312,6 @@ export default function Player() {
                 </button>
               </div>
 
-              {/* Enhanced Frequency Control */}
               <div className="p-4 rounded-xl bg-gradient-to-br from-white/5 to-white/0 border border-white/10 relative overflow-hidden">
                  <div className="absolute top-0 left-0 w-1 h-full" style={{ backgroundColor: currentBrainwave.color }} />
                  <div className="flex justify-between items-end mb-4">
@@ -283,7 +321,6 @@ export default function Player() {
                     </div>
                     <div className="text-3xl font-thin text-white">{settings.binauralFreq} <span className="text-xs font-normal text-slate-500">Hz</span></div>
                  </div>
-                 
                  <input
                     type="range"
                     min={0.5}
@@ -293,7 +330,6 @@ export default function Player() {
                     onChange={(e) => updateSettings({ binauralFreq: parseFloat(e.target.value) })}
                     className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-white mb-3"
                  />
-                 
                  <p className="text-xs text-slate-400 leading-relaxed">
                     {currentBrainwave.desc}
                  </p>
@@ -301,18 +337,18 @@ export default function Player() {
             </motion.div>
           )}
 
+          {/* Breathing Controls */}
           {settings.breathingEnabled && (
             <div className="pt-2 border-t border-white/5">
                <RangeControl label="Breathing Rate" value={settings.breathingRate} min={4} max={12} step={1} onChange={(v) => updateSettings({ breathingRate: v })} formatValue={(v) => `${v} BPM`} leftLabel="Relax (4)" rightLabel="Alert (12)" />
             </div>
           )}
 
+          {/* General Mix */}
           <div className="pt-2 border-t border-white/5 space-y-4">
             <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Mixer</h3>
-            
             <RangeControl label="Voice Volume" value={settings.voiceVol} min={0} max={1} step={0.1} onChange={(v) => updateSettings({ voiceVol: v })} formatValue={(v) => `${Math.round(v * 100)}%`} />
             
-            {/* Added Binaural Volume */}
             {settings.binauralEnabled && (
               <RangeControl label="Brainwave Volume" value={settings.binauralVol ?? 0.3} min={0} max={1} step={0.05} onChange={(v) => updateSettings({ binauralVol: v })} formatValue={(v) => `${Math.round(v * 100)}%`} />
             )}
@@ -334,6 +370,7 @@ export default function Player() {
 
         </div>
       </Modal>
+
     </motion.div>
   );
 }

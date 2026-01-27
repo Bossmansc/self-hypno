@@ -1,15 +1,14 @@
 import React, { useState, useRef } from 'react';
 import { useTrance, UserAnchors } from '../context/TranceContext';
 import { useToast } from '../context/ToastContext';
-import { X, Download, RotateCcw, FileUp, Brain, MapPin, Palette, Cpu } from 'lucide-react';
+import { X, Download, RotateCcw, FileUp, Brain, MapPin, Palette, Cpu, Sparkles, Lock, ShieldCheck, PlayCircle } from 'lucide-react';
 import Modal from '../components/Modal';
 import { motion } from 'framer-motion';
 
 export default function Profile() {
-  const { navTo, resetData, importData, exportData, userProfile, updateUserProfile, updateUserAnchors, backendUrl } = useTrance();
+  const { navTo, resetData, importData, exportData, userProfile, updateUserProfile, updateUserAnchors, backendUrl, isPro, totalGenerations, totalPlays } = useTrance();
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
   const [activeModal, setActiveModal] = useState<'NONE' | 'ASSESSMENT' | 'ANCHORS' | 'EXPORT' | 'SETTINGS'>('NONE');
   const [exportContent, setExportContent] = useState('');
 
@@ -70,15 +69,61 @@ export default function Profile() {
 
       <div className="p-6 flex flex-col items-center overflow-y-auto pb-20">
         {/* Header Card */}
-        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="w-full bg-gradient-to-br from-indigo-900/40 to-purple-900/20 rounded-3xl p-8 mb-8 text-center border border-white/10">
-          <h2 className="text-4xl font-thin text-white mb-2">{userProfile.learningStyle}</h2>
-          <p className="text-indigo-200 font-light text-sm">{userProfile.resistanceLevel} Responder</p>
+        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="w-full bg-gradient-to-br from-indigo-900/40 to-purple-900/20 rounded-3xl p-8 mb-6 text-center border border-white/10 relative overflow-hidden">
+          <div className="relative z-10">
+            <h2 className="text-4xl font-thin text-white mb-2">{userProfile.learningStyle}</h2>
+            <p className="text-indigo-200 font-light text-sm">{userProfile.resistanceLevel} Responder</p>
+          </div>
+          {!isPro && (
+            <button onClick={() => navTo('UPGRADE')} className="mt-6 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-full border border-white/20 text-xs font-bold uppercase tracking-wider text-white transition-all flex items-center justify-center gap-2 mx-auto">
+              <Sparkles size={14} className="text-amber-400" /> Get Founder's Deal
+            </button>
+          )}
         </motion.div>
 
         <div className="w-full space-y-4">
-          {/* AI Settings Section */}
+          {/* Plan Status */}
+          <div className="bg-white/5 rounded-2xl border border-white/5 p-4 flex items-center justify-between">
+             <div className="flex items-center gap-3">
+               <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isPro ? 'bg-amber-500/20 text-amber-500' : 'bg-slate-700/50 text-slate-400'}`}>
+                 {isPro ? <ShieldCheck size={20} /> : <Lock size={20} />}
+               </div>
+               <div>
+                 <div className="text-sm font-bold text-white">{isPro ? 'Founder\'s Edition' : 'Free Tier'}</div>
+                 <div className="text-xs text-slate-400">{isPro ? 'Lifetime Access Active' : 'Limited Access'}</div>
+               </div>
+             </div>
+             {!isPro && <button onClick={() => navTo('UPGRADE')} className="text-xs text-indigo-400 font-bold">UPGRADE</button>}
+          </div>
+
+          {/* Stats - Only show if not Pro (to encourage upgrade) or maybe show lifetime stats if pro */}
+          {!isPro && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-white/5 rounded-2xl border border-white/5 p-3">
+                 <div className="flex items-center gap-2 mb-2 text-xs text-slate-400">
+                   <Brain size={14} /> AI Generations
+                 </div>
+                 <div className="text-xl font-bold text-white">{totalGenerations} / 3</div>
+                 <div className="w-full h-1 bg-slate-700 rounded-full mt-2 overflow-hidden">
+                   <div className="h-full bg-indigo-500" style={{ width: `${Math.min(100, (totalGenerations/3)*100)}%` }} />
+                 </div>
+              </div>
+              <div className="bg-white/5 rounded-2xl border border-white/5 p-3">
+                 <div className="flex items-center gap-2 mb-2 text-xs text-slate-400">
+                   <PlayCircle size={14} /> Sessions Played
+                 </div>
+                 <div className="text-xl font-bold text-white">{totalPlays} / 10</div>
+                 <div className="w-full h-1 bg-slate-700 rounded-full mt-2 overflow-hidden">
+                   <div className="h-full bg-indigo-500" style={{ width: `${Math.min(100, (totalPlays/10)*100)}%` }} />
+                 </div>
+              </div>
+            </div>
+          )}
+
+          <div className="h-px bg-white/5 my-2" />
+
+          {/* System Info */}
           <div className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-2 mb-2">System & Intelligence</div>
-          
           <div className="bg-white/5 rounded-2xl border border-white/5 p-4 space-y-4">
             <div>
               <div className="flex items-center gap-2 text-white mb-2">
@@ -95,9 +140,8 @@ export default function Profile() {
             </div>
           </div>
 
-          {/* Personalization Section */}
+          {/* Personalization */}
           <div className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-2 mt-4 mb-2">Personalization</div>
-          
           <button onClick={() => setActiveModal('ASSESSMENT')} className="w-full py-4 bg-white/5 rounded-2xl text-white flex items-center px-6 gap-4 hover:bg-white/10 transition-all border border-white/5">
             <Brain className="text-pink-400" size={24} />
             <div className="text-left flex-1">
@@ -105,7 +149,6 @@ export default function Profile() {
               <div className="text-xs text-slate-400">Customize AI language patterns</div>
             </div>
           </button>
-
           <button onClick={() => setActiveModal('ANCHORS')} className="w-full py-4 bg-white/5 rounded-2xl text-white flex items-center px-6 gap-4 hover:bg-white/10 transition-all border border-white/5">
             <MapPin className="text-blue-400" size={24} />
             <div className="text-left flex-1">
@@ -114,9 +157,8 @@ export default function Profile() {
             </div>
           </button>
 
-          {/* Data Section */}
+          {/* Data */}
           <div className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-2 mt-6 mb-2">Data & Backup</div>
-          
           <div className="grid grid-cols-2 gap-4 mt-2">
             <button onClick={handleExport} className="w-full py-4 bg-white/5 rounded-2xl text-slate-300 hover:bg-white/10 flex flex-col items-center justify-center gap-2 border border-white/5">
               <Download size={20} /> <span className="text-xs">Backup</span>
@@ -125,7 +167,7 @@ export default function Profile() {
               <FileUp size={20} /> <span className="text-xs">Import</span>
             </button>
           </div>
-
+          
           <button onClick={() => { if(confirm("Reset Everything?")) resetData(); }} className="w-full py-4 border border-red-500/20 text-red-400 rounded-2xl hover:bg-red-500/10 flex items-center justify-center gap-2 mt-4">
             <RotateCcw size={18} /> Reset App
           </button>
@@ -138,11 +180,9 @@ export default function Profile() {
       <Modal isOpen={activeModal === 'ASSESSMENT'} onClose={() => setActiveModal('NONE')} title="Psychographic Profile">
         <AssessmentForm initialStyle={userProfile.learningStyle} initialRes={userProfile.resistanceLevel} onSave={handleAssessmentSave} />
       </Modal>
-
       <Modal isOpen={activeModal === 'ANCHORS'} onClose={() => setActiveModal('NONE')} title="Personal Anchors">
         <AnchorsForm initialAnchors={userProfile.anchors} onSave={handleAnchorsSave} />
       </Modal>
-
       <Modal isOpen={activeModal === 'EXPORT'} onClose={() => setActiveModal('NONE')} title="Backup Data">
         <textarea readOnly value={exportContent} className="w-full h-40 bg-black/20 rounded-xl p-3 text-xs text-slate-300 mb-4 font-mono border border-white/10" />
         <button onClick={() => { navigator.clipboard.writeText(exportContent); showToast('Copied', 'success'); }} className="w-full py-3 bg-indigo-600 rounded-xl text-white">Copy Code</button>

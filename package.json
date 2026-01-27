@@ -8,18 +8,23 @@
     "build": "vite build",
     "preview": "vite preview",
     "backend": "cd backend && pip install -r requirements.txt && uvicorn main:app --reload --port 8000",
-    "start": "npm run dev"
+    "start": "npm run dev",
+    "deploy": "npm run build && firebase deploy",
+    "android": "npm run build && npx cap sync && npx cap open android"
   },
   "dependencies": {
     "framer-motion": "^11.0.5",
     "lucide-react": "^0.330.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "@capacitor/core": "^5.7.0",
+    "@capacitor/android": "^5.7.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.55",
     "@types/react-dom": "^18.2.19",
     "@vitejs/plugin-react": "^4.2.1",
+    "@capacitor/cli": "^5.7.0",
     "autoprefixer": "^10.4.17",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",

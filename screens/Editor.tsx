@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTrance, UserProfile } from '../context/TranceContext';
 import { useToast } from '../context/ToastContext';
 import { 
   X, Wand2, Save, ArrowLeft, RefreshCw, 
   LayoutTemplate, Activity, Split, Brain, 
-  Wind, Thermometer, Folder, FileText
+  Wind, Thermometer, Folder, FileText, Lock, Sparkles, Play
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SCRIPT_TEMPLATES, CATEGORIES, ScriptTemplate } from '../data/templates';
@@ -61,18 +61,28 @@ interface AnalysisResult {
 }
 
 export default function Editor() {
-  const { navTo, saveSession, sessions, editingSessionId, activeProvider, userProfile, backendUrl } = useTrance();
+  const { 
+    navTo, saveSession, sessions, editingSessionId, 
+    userProfile, backendUrl, editSession, 
+    incrementGenCount, isPro, totalGenerations,
+    playSession 
+  } = useTrance();
   const { showToast } = useToast();
+
   const [step, setStep] = useState<'BUILD' | 'TEMPLATES' | 'EDIT'>('BUILD');
-  
   const [config, setConfig] = useState<ScriptConfig>(INITIAL_CONFIG);
   const [title, setTitle] = useState('');
   const [icon, setIcon] = useState('🧘');
   const [script, setScript] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [genLog, setGenLog] = useState<string[]>([]);
+  
   const [selectedCategory, setSelectedCategory] = useState(CATEGORIES[0]);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [showAnalyzer, setShowAnalyzer] = useState(false);
+  const [showLimitModal, setShowLimitModal] = useState<'GEN' | 'SAVE' | null>(null);
+  
+  const [pendingPlayId, setPendingPlayId] = useState<string | null>(null);
 
   useEffect(() => {
     if (editingSessionId) {
@@ -85,6 +95,39 @@ export default function Editor() {
       }
     }
   }, [editingSessionId, sessions]);
+
+  useEffect(() => {
+    if (pendingPlayId) {
+      const sessionExists = sessions.find(s => s.id === pendingPlayId);
+      if (sessionExists) {
+        playSession(pendingPlayId);
+        setPendingPlayId(null);
+      }
+    }
+  }, [sessions, pendingPlayId, playSession]);
+
+  useEffect(() => {
+    if (!isGenerating) return;
+    const logs = [
+      "> INITIALIZING NEURAL LINK...",
+      "> ANALYZING PSYCHOGRAPHIC PROFILE...",
+      `> DETECTING STYLE: ${userProfile.learningStyle.toUpperCase()}`,
+      "> LOADING INDUCTION PROTOCOLS...",
+      "> OPTIMIZING SYNTAX FOR THETA STATE...",
+      "> INSERTING BINAURAL ANCHORS...",
+      "> COMPILING SUGGESTIONS...",
+      "> FINALIZING SCRIPT..."
+    ];
+    let i = 0;
+    setGenLog([]);
+    const interval = setInterval(() => {
+      if (i < logs.length) {
+        setGenLog(prev => [...prev, logs[i]]);
+        i++;
+      }
+    }, 400); 
+    return () => clearInterval(interval);
+  }, [isGenerating, userProfile]);
 
   const handleConfigChange = (key: keyof ScriptConfig, value: any) => {
     setConfig(prev => ({ ...prev, [key]: value }));
@@ -134,14 +177,15 @@ export default function Editor() {
     const finalMetaphor = config.metaphor === 'Custom' ? config.customMetaphor : config.metaphor;
     const minutes = parseInt(config.length);
     const targetWords = minutes * 110;
+    
     const intensityLabel = config.intensity < 33 ? "Light" : config.intensity < 66 ? "Medium" : "Deep";
-
+    
     let featuresList = [];
     if(config.features.pmr) featuresList.push("Begin with Progressive Muscle Relaxation");
-    if(config.features.binaural) featuresList.push("Include [BINAURAL: X Hz] markers for audio engine");
+    if(config.features.binaural) featuresList.push("Include [BINAURAL: X Hz] markers. X MUST be between 0.5Hz and 40Hz.");
     if(config.features.trigger) featuresList.push("Install post-hypnotic trigger");
     if(config.features.future) featuresList.push("Include future pacing");
-
+    
     const anchors = userProfile.anchors;
     if(anchors.place) featuresList.push(`Safe Place: ${anchors.place}`);
     if(anchors.color) featuresList.push(`Power Color: ${anchors.color}`);
@@ -178,7 +222,7 @@ export default function Editor() {
     - Voice: ${config.voice}
     - Depth: ${intensityLabel}
     - Required Elements: ${featuresList.join(', ')}
-
+    
     **PERSONAL HISTORY:**
     ${memoryNote}
 
@@ -189,9 +233,17 @@ export default function Editor() {
   };
 
   const generateWithAI = async () => {
+    if (!incrementGenCount()) {
+      setShowLimitModal('GEN');
+      return;
+    }
+
     setIsGenerating(true);
+    setStep('EDIT'); 
+    setScript(''); 
+    
     const userPrompt = buildPrompt();
-    const systemPrompt = "You are an expert clinical hypnotherapist who adapts perfectly to user psychology.";
+    const systemPrompt = "You are an expert hypnotherapist skilled in Ericksonian hypnosis and creative visualization. You adapt perfectly to the user's requested scenario, metaphor, and goal, creating immersive and sensory-rich scripts.";
 
     try {
       const endpoint = `${backendUrl}/generate`;
@@ -202,11 +254,15 @@ export default function Editor() {
         body: JSON.stringify({ 
           provider: 'deepseek', 
           system_prompt: systemPrompt, 
-          user_prompt: userPrompt 
+          user_prompt: userPrompt,
+          is_pro: isPro 
         })
       });
 
       if(!res.ok) {
+          if (res.status === 429) {
+             throw new Error("Daily generation limit reached. Please upgrade.");
+          }
           const errorText = await res.text();
           console.error("AI Generation Error:", errorText);
           const errorJson = JSON.parse(errorText || '{}');
@@ -215,17 +271,39 @@ export default function Editor() {
 
       const data = await res.json();
       const generatedText = data.content;
-
       if(!generatedText) throw new Error("Received empty response from AI");
 
+      const generatedTitle = title || `${config.goal} (${config.length})`;
       setScript(generatedText);
-      if(!title) setTitle(`${config.goal} (${config.length})`);
-      setStep('EDIT');
-      showToast('Personalized script generated', 'success');
+      if(!title) setTitle(generatedTitle);
+
+      const newId = editingSessionId || Date.now().toString();
+      const saved = saveSession({
+        id: newId,
+        title: generatedTitle,
+        script: generatedText,
+        icon,
+        category: 'Custom',
+        parentId: editingSessionId || undefined
+      });
+
+      if (!saved) {
+        setShowLimitModal('SAVE'); 
+      } else {
+        if (editingSessionId !== newId) {
+            editSession(newId);
+        }
+        showToast('Script generated & auto-saved', 'success');
+      }
 
     } catch (error: any) {
       console.error(error);
-      showToast(error.message || 'Generation failed', 'error');
+      if (error.message.includes("limit reached")) {
+        setShowLimitModal('GEN');
+      } else {
+        showToast(error.message || 'Generation failed', 'error');
+      }
+      setScript("Generation Failed. Please try again.");
     } finally {
       setIsGenerating(false);
     }
@@ -243,7 +321,7 @@ export default function Editor() {
       finalId = Date.now().toString();
     }
 
-    saveSession({
+    const saved = saveSession({
       id: finalId,
       title: finalTitle,
       script,
@@ -252,8 +330,33 @@ export default function Editor() {
       parentId: asVariation ? editingSessionId || undefined : undefined
     });
 
-    showToast(asVariation ? 'Variation saved' : 'Session saved', 'success');
-    navTo('DASHBOARD');
+    if (saved) {
+      showToast(asVariation ? 'Variation saved' : 'Session saved', 'success');
+      navTo('DASHBOARD');
+    } else {
+      setShowLimitModal('SAVE');
+    }
+  };
+
+  const handleSaveAndPlay = () => {
+    if (!title.trim()) return showToast('Please enter a title', 'error');
+    if (!script.trim()) return showToast('Please enter a script', 'error');
+
+    const finalId = editingSessionId || Date.now().toString();
+    const saved = saveSession({
+      id: finalId,
+      title: title,
+      script,
+      icon,
+      category: 'Custom'
+    });
+
+    if (saved) {
+      showToast('Session saved', 'success');
+      setPendingPlayId(finalId); 
+    } else {
+      setShowLimitModal('SAVE');
+    }
   };
 
   const wordCount = script.trim().split(/\s+/).length;
@@ -265,7 +368,6 @@ export default function Editor() {
         <button onClick={() => step !== 'BUILD' ? setStep('BUILD') : navTo('DASHBOARD')} className="p-2 rounded-full hover:bg-white/10">
           {step !== 'BUILD' ? <ArrowLeft className="text-slate-300" /> : <X className="text-slate-300" />}
         </button>
-        
         <div className="flex gap-2 bg-white/5 rounded-full p-1">
           <button 
             onClick={() => setStep('BUILD')} 
@@ -286,7 +388,6 @@ export default function Editor() {
             <FileText size={14} /> EDITOR
           </button>
         </div>
-
         <button onClick={() => handleSave(false)} className="p-2 rounded-full hover:bg-white/10 text-indigo-400">
           <Save size={20} />
         </button>
@@ -295,7 +396,7 @@ export default function Editor() {
       {/* Content */}
       <div className="flex-1 overflow-y-auto bg-gradient-to-b from-[#1a1a2e] to-[#16213e]">
         <AnimatePresence mode='wait'>
-          {/* BUILD MODE */}
+          {/* STEP 1: AI BUILDER */}
           {step === 'BUILD' && (
             <motion.div key="build" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="p-6 space-y-8 max-w-2xl mx-auto">
               
@@ -327,6 +428,15 @@ export default function Editor() {
                 <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                   {METAPHORS.map(m => (<SelectBtn key={m} label={m} selected={config.metaphor === m} onClick={() => handleConfigChange('metaphor', m)} />))}
                 </div>
+                {config.metaphor === 'Custom' && (
+                  <input 
+                    type="text" 
+                    placeholder="e.g. Floating in deep space, Ancient Temple..." 
+                    value={config.customMetaphor} 
+                    onChange={(e) => handleConfigChange('customMetaphor', e.target.value)} 
+                    className="w-full mt-2 bg-black/20 border border-white/10 rounded-xl p-3 text-white focus:border-indigo-500 outline-none" 
+                  />
+                )}
                 <div className="h-4" />
                 <div className="flex gap-2">
                   {VOICES.map(v => (<SelectBtn key={v} label={v} selected={config.voice === v} onClick={() => handleConfigChange('voice', v)} />))}
@@ -369,7 +479,7 @@ export default function Editor() {
             </motion.div>
           )}
 
-          {/* TEMPLATES MODE */}
+          {/* STEP 2: TEMPLATES */}
           {step === 'TEMPLATES' && (
             <motion.div key="templates" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="p-6 max-w-2xl mx-auto">
               <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
@@ -396,7 +506,7 @@ export default function Editor() {
             </motion.div>
           )}
 
-          {/* EDITOR MODE */}
+          {/* STEP 3: EDITOR */}
           {step === 'EDIT' && (
             <motion.div key="edit" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="flex flex-col h-full max-w-4xl mx-auto">
               <div className="p-4 grid grid-cols-[auto_1fr] gap-4 items-center bg-[#1a1a2e]">
@@ -409,31 +519,50 @@ export default function Editor() {
                 </div>
                 <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Session Title" className="w-full bg-transparent text-xl font-light text-white placeholder:text-slate-600 outline-none border-b border-white/10 focus:border-indigo-500 pb-2 transition-all" />
               </div>
-
-              <div className="flex-1 relative">
-                <textarea 
-                  value={script} 
-                  onChange={(e) => setScript(e.target.value)} 
-                  className="w-full h-full bg-[#121212]/50 p-6 text-slate-300 text-lg font-light leading-relaxed resize-none outline-none focus:bg-[#121212]/80 transition-colors" 
-                  placeholder="Your script goes here..." 
-                />
+              
+              <div className="flex-1 relative bg-[#121212]/50">
+                {isGenerating ? (
+                  <div className="absolute inset-0 p-8 font-mono text-indigo-400 text-sm overflow-hidden flex flex-col justify-end">
+                    {genLog.map((log, i) => (
+                      <motion.div 
+                        key={i}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        className="mb-1"
+                      >
+                        {log}
+                      </motion.div>
+                    ))}
+                    <div className="animate-pulse">_</div>
+                  </div>
+                ) : (
+                  <textarea 
+                    value={script} 
+                    onChange={(e) => setScript(e.target.value)} 
+                    className="w-full h-full bg-transparent p-6 text-slate-300 text-lg font-light leading-relaxed resize-none outline-none focus:bg-[#121212]/80 transition-colors" 
+                    placeholder="Your script goes here..." 
+                  />
+                )}
               </div>
 
               {/* Toolbar */}
               <div className="p-4 bg-[#121212] border-t border-white/10 flex justify-between items-center">
-                <div className="text-xs text-slate-500 font-mono">
-                  {wordCount} words • ~{Math.ceil(wordCount / 110)} mins
+                <div className="text-xs text-slate-500 font-mono hidden md:block">
+                  {isGenerating ? "ENCRYPTED" : `${wordCount} words • ~${Math.ceil(wordCount / 110)} mins`}
                 </div>
-                <div className="flex gap-3">
-                  <button onClick={analyzeScript} className="p-2 text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors flex items-center gap-2">
-                    <Activity size={16} /> <span className="text-xs">Analyze</span>
+                <div className="flex gap-2 w-full md:w-auto justify-end">
+                  <button onClick={analyzeScript} disabled={isGenerating} className="p-2 text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors flex items-center gap-2">
+                    <Activity size={16} /> <span className="text-xs hidden sm:inline">Analyze</span>
                   </button>
-                  
                   {editingSessionId && (
-                    <button onClick={() => handleSave(true)} className="p-2 text-indigo-400 hover:text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-lg transition-colors flex items-center gap-2">
-                      <Split size={16} /> <span className="text-xs">Save Variant</span>
+                    <button onClick={() => handleSave(true)} disabled={isGenerating} className="p-2 text-indigo-400 hover:text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-lg transition-colors flex items-center gap-2">
+                      <Split size={16} /> <span className="text-xs hidden sm:inline">Save Variant</span>
                     </button>
                   )}
+                  {/* Save & Play Button */}
+                  <button onClick={handleSaveAndPlay} disabled={isGenerating} className="p-2 text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-colors flex items-center gap-2 shadow-lg shadow-indigo-900/20 ml-2">
+                    <Play size={16} fill="currentColor" /> <span className="text-xs font-bold">Save & Listen</span>
+                  </button>
                 </div>
               </div>
             </motion.div>
@@ -441,7 +570,7 @@ export default function Editor() {
         </AnimatePresence>
       </div>
 
-      {/* Generator Button (Floating) */}
+      {/* Generator Button */}
       {step === 'BUILD' && (
         <div className="absolute bottom-8 left-0 right-0 flex flex-col items-center justify-center px-6 pointer-events-none">
           <motion.button
@@ -453,7 +582,7 @@ export default function Editor() {
             {isGenerating ? (
               <> <RefreshCw className="animate-spin" /> Generating... </>
             ) : (
-              <> <Wand2 /> Generate Script (DeepSeek) </>
+              <> <Wand2 /> Generate Script ({isPro ? 'Unlimited' : `${Math.max(0, 3 - totalGenerations)} Left (Total)`}) </>
             )}
           </motion.button>
           <div className="text-[10px] text-slate-500 mt-2 bg-black/40 px-2 py-1 rounded backdrop-blur-sm pointer-events-auto">
@@ -462,7 +591,7 @@ export default function Editor() {
         </div>
       )}
 
-      {/* Analysis Modal */}
+      {/* Analyzer Modal */}
       <Modal isOpen={showAnalyzer} onClose={() => setShowAnalyzer(false)} title="Script Analysis">
         {analysis && (
           <div className="space-y-6">
@@ -479,14 +608,12 @@ export default function Editor() {
                 <p className="text-xs text-slate-400">Based on sensory language density and positive phrasing.</p>
               </div>
             </div>
-
             <div className="grid grid-cols-2 gap-3">
               <StatBox label="Visual Words" value={analysis.visualCount} color="text-pink-400" />
               <StatBox label="Auditory Words" value={analysis.auditoryCount} color="text-blue-400" />
               <StatBox label="Kinesthetic Words" value={analysis.kinestheticCount} color="text-emerald-400" />
               <StatBox label="Negative Words" value={analysis.negativeCount} color="text-red-400" alert={analysis.negativeCount > 3} />
             </div>
-
             <div className="p-3 bg-white/5 rounded-lg border border-white/10">
               <div className="text-xs text-slate-500 uppercase font-bold mb-2">Recommendations</div>
               <ul className="text-sm text-slate-300 space-y-1 list-disc list-inside">
@@ -498,6 +625,29 @@ export default function Editor() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Limit Modal */}
+      <Modal isOpen={!!showLimitModal} onClose={() => setShowLimitModal(null)} title={showLimitModal === 'GEN' ? "Generation Limit Reached" : "Library Full"}>
+        <div className="text-center p-4">
+           <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400">
+             <Lock size={30} />
+           </div>
+           {showLimitModal === 'GEN' ? (
+             <>
+               <h3 className="text-xl font-bold text-white mb-2">You've used all 3 free generations</h3>
+               <p className="text-sm text-slate-400 mb-6">Upgrade to the Founder's Deal to generate unlimited professional hypnosis scripts forever.</p>
+             </>
+           ) : (
+             <>
+               <h3 className="text-xl font-bold text-white mb-2">Library Storage Full</h3>
+               <p className="text-sm text-slate-400 mb-6">The free plan allows for 5 saved sessions. Upgrade to store unlimited sessions or delete old ones to make space.</p>
+             </>
+           )}
+           <button onClick={() => { setShowLimitModal(null); navTo('PROFILE'); }} className="w-full py-3 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl text-white font-bold flex items-center justify-center gap-2">
+             <Sparkles size={16} /> View Founder's Deal
+           </button>
+        </div>
       </Modal>
     </div>
   );

@@ -2,8 +2,6 @@ import { useRef, useEffect, useCallback, useState } from 'react';
 import { Settings } from '../../context/TranceContext';
 import { SoundscapeType } from './types';
 
-const FIRE_SOUND_URL = "https://upload.wikimedia.org/wikipedia/commons/e/e0/Fire_crackling.ogg";
-
 interface SoundscapesProps {
   settings: Settings;
   isPlayingRef: React.MutableRefObject<boolean>;
@@ -15,20 +13,17 @@ export const useSoundscapes = ({ settings, isPlayingRef, audioCtxRef }: Soundsca
   const bgNodesRef = useRef<AudioNode[]>([]);
   const bgGainRef = useRef<GainNode | null>(null);
   const bgPannerRef = useRef<StereoPannerNode | null>(null);
-  const realAudioRef = useRef<HTMLAudioElement | null>(null);
   const spatialIntervalRef = useRef<number | null>(null);
 
   const initNodes = useCallback(() => {
     const ctx = audioCtxRef.current;
     if (!ctx) return;
-
     if (!bgGainRef.current) {
       bgGainRef.current = ctx.createGain();
       try {
         bgPannerRef.current = ctx.createStereoPanner();
         bgPannerRef.current.connect(bgGainRef.current);
       } catch (e) {
-        // Fallback for browsers without StereoPanner
         console.warn("StereoPanner not supported, using direct connect");
       }
       bgGainRef.current.connect(ctx.destination);
@@ -94,34 +89,14 @@ export const useSoundscapes = ({ settings, isPlayingRef, audioCtxRef }: Soundsca
     });
     bgNodesRef.current = [];
     
-    if (realAudioRef.current) {
-      realAudioRef.current.pause();
-      realAudioRef.current.currentTime = 0;
-    }
-
     setActiveSoundscape(type);
-    
     if (!isPlayingRef.current || type === 'none') return;
     
     initNodes();
     const ctx = audioCtxRef.current;
     if (!ctx) return;
-    
-    // Connect to panner if available, else gain
     const dest = bgPannerRef.current || bgGainRef.current;
     if (!dest) return;
-
-    if (type === 'fire') {
-      if (!realAudioRef.current) {
-        realAudioRef.current = new Audio(FIRE_SOUND_URL);
-        realAudioRef.current.loop = true;
-      } else {
-        realAudioRef.current.src = FIRE_SOUND_URL;
-      }
-      realAudioRef.current.volume = settings.ambVol;
-      realAudioRef.current.play().catch(e => console.log("Fire play blocked", e));
-      return;
-    }
 
     if (type === 'rain') {
       const pink = createPinkNoise(ctx);
@@ -130,18 +105,16 @@ export const useSoundscapes = ({ settings, isPlayingRef, audioCtxRef }: Soundsca
       pinkFilter.frequency.value = 800;
       const pinkGain = ctx.createGain();
       pinkGain.gain.value = 0.6;
-
       pink.connect(pinkFilter).connect(pinkGain).connect(dest);
-
+      
       const brown = createBrownNoise(ctx);
       const brownFilter = ctx.createBiquadFilter();
       brownFilter.type = 'lowpass';
       brownFilter.frequency.value = 300;
       const brownGain = ctx.createGain();
       brownGain.gain.value = 0.4;
-
       brown.connect(brownFilter).connect(brownGain).connect(dest);
-
+      
       pink.start();
       brown.start();
       bgNodesRef.current.push(pink, pinkFilter, pinkGain, brown, brownFilter, brownGain);
@@ -156,10 +129,10 @@ export const useSoundscapes = ({ settings, isPlayingRef, audioCtxRef }: Soundsca
       lfo.frequency.value = 0.1;
       const lfoGain = ctx.createGain();
       lfoGain.gain.value = 200;
+      
       lfo.connect(lfoGain).connect(filter.frequency);
-
       pink.connect(filter).connect(dest);
-
+      
       pink.start();
       lfo.start();
       bgNodesRef.current.push(pink, filter, lfo, lfoGain);
@@ -183,9 +156,6 @@ export const useSoundscapes = ({ settings, isPlayingRef, audioCtxRef }: Soundsca
   }, [initNodes, createPinkNoise, createBrownNoise, startSpatialLoop, stopSpatialLoop, settings.ambVol, isPlayingRef, audioCtxRef]);
 
   const updateSoundscapeVolume = useCallback((volume: number) => {
-    if (realAudioRef.current) {
-      realAudioRef.current.volume = volume;
-    }
     if (bgGainRef.current && audioCtxRef.current) {
       bgGainRef.current.gain.setValueAtTime(volume, audioCtxRef.current.currentTime);
     }
@@ -203,7 +173,6 @@ export const useSoundscapes = ({ settings, isPlayingRef, audioCtxRef }: Soundsca
         try { (node as any).stop(); } catch(e){}
         node.disconnect();
       });
-      if (realAudioRef.current) realAudioRef.current.pause();
       if (spatialIntervalRef.current) clearInterval(spatialIntervalRef.current);
     };
   }, []);
