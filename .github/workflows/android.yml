@@ -47,10 +47,11 @@ jobs:
         run: npx cap sync
 
       - name: Build APK with Gradle
-        cd android
-        # Fix permission issues common in CI/CD
-        chmod +x gradlew
-        ./gradlew assembleDebug
+        # The fix: Added 'run: |' below
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
