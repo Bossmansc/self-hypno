@@ -59,11 +59,13 @@ export const useTTS = ({
       synthRef.current?.getVoices();
     };
     loadVoices();
-    const interval = setInterval(loadVoices, 1000);
     if (synthRef.current.onvoiceschanged !== undefined) {
-      synthRef.current.onvoiceschanged = loadVoices;
+      const originalHandler = synthRef.current.onvoiceschanged;
+      synthRef.current.onvoiceschanged = (e) => {
+        loadVoices();
+        if(originalHandler) (originalHandler as any)(e);
+      };
     }
-    return () => clearInterval(interval);
   }, []);
 
   const parseScript = useCallback((script: string): TTSAction[] => {
@@ -207,12 +209,13 @@ export const useTTS = ({
         return;
       }
 
+      // Android Fix: Always cancel before speaking to clear any stuck state
+      synthRef.current.cancel();
+
       const u = new SpeechSynthesisUtterance(action.text);
       currentUtteranceRef.current = u;
       
       // -- VOICE SELECTION LOGIC --
-      u.lang = 'en-US'; // Default fallback
-
       let voices = synthRef.current.getVoices();
       if (voices.length === 0 && window.speechSynthesis) {
          voices = window.speechSynthesis.getVoices(); 
@@ -229,17 +232,13 @@ export const useTTS = ({
         }
       }
 
-      // 2. Fallback: Try to find a good English voice if nothing selected
-      // This is critical for Android WebViews where "default" might be silent
-      if (!selected) {
-         selected = voices.find(v => v.default) || 
-                    voices.find(v => v.lang.startsWith('en-US')) ||
-                    voices.find(v => v.lang.startsWith('en'));
-      }
-
       if (selected) {
         u.voice = selected;
         u.lang = selected.lang; 
+      } else {
+        // Fallback to generic English if no specific voice found
+        // On Android, NOT setting .voice often yields better results than setting a bad one
+        u.lang = 'en-US';
       }
       // -- END VOICE SELECTION --
 
@@ -273,6 +272,7 @@ export const useTTS = ({
 
       try {
         synthRef.current.speak(u);
+        // Ensure it's playing
         if (synthRef.current.paused) synthRef.current.resume();
       } catch (e) {
         console.error("TTS Speak failed", e);
@@ -296,6 +296,10 @@ export const useTTS = ({
     }
 
     if (isPlayingRef.current) {
+      // Android Fix: Ensure engine is active
+      if (synthRef.current && synthRef.current.paused) {
+        synthRef.current.resume();
+      }
       processorRef.current();
     }
   }, [activeScript, parseScript, reset, isPlayingRef]);

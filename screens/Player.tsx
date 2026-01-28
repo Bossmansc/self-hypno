@@ -85,33 +85,36 @@ export default function Player() {
     const fetchVoices = () => {
       const voices = window.speechSynthesis.getVoices();
       if (voices.length > 0) {
-        setAvailableVoices(voices.sort((a, b) => a.name.localeCompare(b.name)));
+        setAvailableVoices(voices.sort((a, b) => a.lang.localeCompare(b.lang) || a.name.localeCompare(b.name)));
         return true;
       }
       return false;
     };
 
-    // Try immediately
-    if (!fetchVoices()) {
-      // Poll for voices (Android workaround)
-      const intervalId = setInterval(() => {
-        if (fetchVoices()) {
-          clearInterval(intervalId);
-        }
-      }, 500);
+    // Attempt to wake up Android TTS engine
+    if (window.speechSynthesis.getVoices().length === 0) {
+      try {
+        const u = new SpeechSynthesisUtterance(''); 
+        u.volume = 0; 
+        window.speechSynthesis.speak(u);
+      } catch (e) { console.error("TTS Wakeup failed", e); }
+    }
 
-      // Also listen for event
+    if (!fetchVoices()) {
+      // Aggressive polling for Android
+      const intervalId = setInterval(fetchVoices, 500);
+      
       window.speechSynthesis.onvoiceschanged = () => {
         fetchVoices();
       };
-
-      // Stop polling after 10s
-      setTimeout(() => clearInterval(intervalId), 10000);
 
       return () => {
         clearInterval(intervalId);
         window.speechSynthesis.onvoiceschanged = null;
       };
+    } else {
+      // Still listen for changes (e.g. language pack install)
+      window.speechSynthesis.onvoiceschanged = fetchVoices;
     }
   }, []);
 
