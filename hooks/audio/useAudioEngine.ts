@@ -23,7 +23,6 @@ export const useAudioEngine = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentFreq, setCurrentFreq] = useState(settings.binauralFreq);
   const isPlayingRef = useRef(false);
-  
   const audioCtxRef = useRef<AudioContext | null>(null);
 
   const initAudioContext = useCallback(() => {
@@ -37,6 +36,7 @@ export const useAudioEngine = ({
         }
       }
     }
+    // ANDROID FIX: Always resume context on user gesture
     if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
       audioCtxRef.current.resume().catch(e => console.warn("Audio resume failed", e));
     }
@@ -71,7 +71,6 @@ export const useAudioEngine = ({
     setIsPlaying 
   });
 
-  // Sync settings
   useEffect(() => {
     setCurrentFreq(settings.binauralFreq);
   }, [settings.binauralFreq]);
@@ -80,7 +79,7 @@ export const useAudioEngine = ({
     updateSoundscapeVolume(settings.ambVol);
   }, [settings.ambVol, updateSoundscapeVolume]);
 
-  // Handle entrainment changes
+  // Sync entrainment with play state
   useEffect(() => {
     if (isPlayingRef.current) {
       initEntrainment(); 
@@ -91,18 +90,17 @@ export const useAudioEngine = ({
 
   const togglePlay = useCallback(() => {
     if (isPlayingRef.current) {
-      // STOP
       isPlayingRef.current = false;
       setIsPlaying(false);
       pauseTTS(); 
       playSoundscape('none');
       stopEntrainment();
     } else {
-      // START
       initAudioContext();
       isPlayingRef.current = true;
       setIsPlaying(true);
       setCurrentFreq(settings.binauralFreq);
+      
       playTTS();
       if (activeSoundscape !== 'none') {
         playSoundscape(activeSoundscape as any);
@@ -111,7 +109,6 @@ export const useAudioEngine = ({
     }
   }, [playTTS, pauseTTS, playSoundscape, initAudioContext, activeSoundscape, initEntrainment, stopEntrainment, settings.binauralFreq]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       isPlayingRef.current = false;

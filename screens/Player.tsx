@@ -79,44 +79,38 @@ export default function Player() {
   const lineRefs = useRef<(HTMLParagraphElement | null)[]>([]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  // Robust Voice Fetching for Android
   useEffect(() => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
 
-    const fetchVoices = () => {
+    const updateVoices = () => {
       const voices = window.speechSynthesis.getVoices();
       if (voices.length > 0) {
-        setAvailableVoices(voices.sort((a, b) => a.lang.localeCompare(b.lang) || a.name.localeCompare(b.name)));
-        return true;
+        setAvailableVoices(voices);
       }
-      return false;
     };
 
-    // Attempt to wake up Android TTS engine
-    if (window.speechSynthesis.getVoices().length === 0) {
-      try {
-        const u = new SpeechSynthesisUtterance(''); 
-        u.volume = 0; 
-        window.speechSynthesis.speak(u);
-      } catch (e) { console.error("TTS Wakeup failed", e); }
-    }
+    updateVoices();
 
-    if (!fetchVoices()) {
-      // Aggressive polling for Android
-      const intervalId = setInterval(fetchVoices, 500);
-      
-      window.speechSynthesis.onvoiceschanged = () => {
-        fetchVoices();
-      };
-
-      return () => {
-        clearInterval(intervalId);
-        window.speechSynthesis.onvoiceschanged = null;
-      };
-    } else {
-      // Still listen for changes (e.g. language pack install)
-      window.speechSynthesis.onvoiceschanged = fetchVoices;
-    }
+    // Android doesn't always fire this event reliably, so we poll
+    window.speechSynthesis.onvoiceschanged = updateVoices;
+    const interval = setInterval(updateVoices, 500);
+    
+    return () => {
+      clearInterval(interval);
+      window.speechSynthesis.onvoiceschanged = null;
+    };
   }, []);
+
+  // Ensure a voice is selected if none is
+  useEffect(() => {
+    if (availableVoices.length > 0 && !settings.selectedVoiceURI) {
+        const defaultVoice = availableVoices.find(v => v.default) || availableVoices[0];
+        if (defaultVoice) {
+            updateSettings({ selectedVoiceURI: defaultVoice.voiceURI });
+        }
+    }
+  }, [availableVoices, settings.selectedVoiceURI, updateSettings]);
 
   const handleLineChange = useCallback((index: number) => {
     setActiveLine(index);
@@ -316,7 +310,7 @@ export default function Player() {
                onChange={(e) => updateSettings({ selectedVoiceURI: e.target.value })}
                className="w-full bg-white/5 border border-white/10 rounded-lg p-2 text-sm text-white focus:border-indigo-500 outline-none [&>option]:bg-[#1a1a2e] [&>option]:text-white"
              >
-                <option value="" className="bg-[#1a1a2e] text-white">Default (System)</option>
+                {availableVoices.length === 0 && <option value="">Loading Voices...</option>}
                 {availableVoices.map(v => (
                   <option key={v.voiceURI} value={v.voiceURI} className="bg-[#1a1a2e] text-white">
                     {v.name} ({v.lang})
