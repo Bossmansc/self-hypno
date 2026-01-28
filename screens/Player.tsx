@@ -72,12 +72,10 @@ const RangeControl = ({
 export default function Player() {
   const { navTo, activeSessionId, sessions, settings, updateSettings } = useTrance();
   const session = sessions.find(s => s.id === activeSessionId);
-  
   const [activeLine, setActiveLine] = useState(0);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [entType, setEntType] = useState<'BINAURAL' | 'ISOCHRONIC'>('BINAURAL');
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
-  
   const lineRefs = useRef<(HTMLParagraphElement | null)[]>([]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -86,14 +84,34 @@ export default function Player() {
 
     const fetchVoices = () => {
       const voices = window.speechSynthesis.getVoices();
-      setAvailableVoices(voices.sort((a, b) => a.lang.localeCompare(b.lang)));
+      if (voices.length > 0) {
+        setAvailableVoices(voices.sort((a, b) => a.name.localeCompare(b.name)));
+        return true;
+      }
+      return false;
     };
 
-    fetchVoices();
-    
-    // Safer event binding
-    if (window.speechSynthesis.onvoiceschanged !== undefined) {
-      window.speechSynthesis.onvoiceschanged = fetchVoices;
+    // Try immediately
+    if (!fetchVoices()) {
+      // Poll for voices (Android workaround)
+      const intervalId = setInterval(() => {
+        if (fetchVoices()) {
+          clearInterval(intervalId);
+        }
+      }, 500);
+
+      // Also listen for event
+      window.speechSynthesis.onvoiceschanged = () => {
+        fetchVoices();
+      };
+
+      // Stop polling after 10s
+      setTimeout(() => clearInterval(intervalId), 10000);
+
+      return () => {
+        clearInterval(intervalId);
+        window.speechSynthesis.onvoiceschanged = null;
+      };
     }
   }, []);
 
@@ -147,11 +165,10 @@ export default function Player() {
         </button>
       </div>
 
-      {/* Visualizer / Centerpiece */}
+      {/* Visualizer & Text */}
       <div className="flex-1 flex flex-col items-center relative w-full overflow-hidden">
         <div className="h-[35%] w-full flex items-center justify-center relative shrink-0 z-0">
-          
-          {/* Breathing / Orb Animation */}
+          {/* Animated Background Blob */}
           <motion.div 
             animate={isPlaying ? { 
               scale: [1, 1.2, 1], 
@@ -165,8 +182,8 @@ export default function Player() {
             className="absolute w-[300px] h-[300px] rounded-full blur-[80px] pointer-events-none"
             style={{ backgroundColor: currentBrainwave.color }}
           />
-
-          {/* Rotator Ring */}
+          
+          {/* Rotating Ring */}
           {isPlaying && (
             <motion.div 
               animate={{ rotate: 360 }}
@@ -175,7 +192,7 @@ export default function Player() {
             />
           )}
 
-          {/* Breath Pacer Ring */}
+          {/* Breathing Guide */}
           {settings.breathingEnabled && isPlaying && (
             <motion.div 
               animate={{ 
@@ -206,7 +223,7 @@ export default function Player() {
             <div className="text-6xl filter drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]">{session.icon}</div>
           </motion.div>
 
-          {/* Hz Display */}
+          {/* Binaural Status */}
           {settings.binauralEnabled && isPlaying && (
             <motion.div 
               initial={{ opacity: 0 }} 
@@ -256,7 +273,7 @@ export default function Player() {
           <SoundButton icon={<span className="text-xl">🧘</span>} active={activeSoundscape === 'om'} onClick={() => playSoundscape('om')} />
           <SoundButton icon={<Wind size={20} />} active={activeSoundscape === 'wind'} onClick={() => playSoundscape('wind')} />
         </div>
-
+        
         <motion.button whileTap={{ scale: 0.95 }} onClick={togglePlay} className="w-20 h-20 bg-white text-black rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.2)] hover:shadow-[0_0_50px_rgba(255,255,255,0.4)] transition-shadow">
           {isPlaying ? <Pause size={32} fill="black" /> : <Play size={32} fill="black" className="ml-1" />}
         </motion.button>
@@ -265,8 +282,7 @@ export default function Player() {
       {/* Settings Modal */}
       <Modal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} title="Audio & Entrainment">
         <div className="space-y-6">
-          
-          {/* Toggles */}
+          {/* Quick Toggles */}
           <div className="grid grid-cols-2 gap-3">
              <div onClick={() => updateSettings({ breathingEnabled: !settings.breathingEnabled })} className={`p-3 rounded-xl border cursor-pointer transition-all ${settings.breathingEnabled ? 'bg-indigo-500/10 border-indigo-500' : 'bg-white/5 border-white/5 opacity-70'}`}>
                 <div className="flex justify-between mb-2">
@@ -276,7 +292,7 @@ export default function Player() {
                 <div className="text-sm font-medium text-white">Breathing</div>
                 <div className="text-xs text-slate-500">{settings.breathingRate} BPM</div>
              </div>
-
+             
              <div onClick={() => updateSettings({ binauralEnabled: !settings.binauralEnabled })} className={`p-3 rounded-xl border cursor-pointer transition-all ${settings.binauralEnabled ? 'bg-indigo-500/10 border-indigo-500' : 'bg-white/5 border-white/5 opacity-70'}`}>
                 <div className="flex justify-between mb-2">
                    <Headphones size={20} className={settings.binauralEnabled ? "text-indigo-400" : "text-slate-400"} />
@@ -287,7 +303,7 @@ export default function Player() {
              </div>
           </div>
 
-          {/* Voice Select */}
+          {/* Voice Selector */}
           <div className="pt-2 border-t border-white/5">
              <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-2">
                <MessageSquare size={12} /> AI Voice
@@ -306,7 +322,7 @@ export default function Player() {
              </select>
           </div>
 
-          {/* Binaural Controls */}
+          {/* Brainwave Controls */}
           {settings.binauralEnabled && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="pt-2 border-t border-white/5">
               <div className="flex gap-2 mb-4">
@@ -317,7 +333,7 @@ export default function Player() {
                    <Speaker size={12} /> Isochronic (Speaker)
                 </button>
               </div>
-
+              
               <div className="p-4 rounded-xl bg-gradient-to-br from-white/5 to-white/0 border border-white/10 relative overflow-hidden">
                  <div className="absolute top-0 left-0 w-1 h-full" style={{ backgroundColor: currentBrainwave.color }} />
                  <div className="flex justify-between items-end mb-4">
@@ -327,7 +343,6 @@ export default function Player() {
                     </div>
                     <div className="text-3xl font-thin text-white">{settings.binauralFreq} <span className="text-xs font-normal text-slate-500">Hz</span></div>
                  </div>
-                 
                  <input
                     type="range"
                     min={0.5}
@@ -351,7 +366,7 @@ export default function Player() {
             </div>
           )}
 
-          {/* Master Mix */}
+          {/* Audio Mixer */}
           <div className="pt-2 border-t border-white/5 space-y-4">
             <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Mixer</h3>
             <RangeControl label="Voice Volume" value={settings.voiceVol} min={0} max={1} step={0.1} onChange={(v) => updateSettings({ voiceVol: v })} formatValue={(v) => `${Math.round(v * 100)}%`} />

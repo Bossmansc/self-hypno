@@ -40,12 +40,9 @@ export const useTTS = ({
   const actionQueueRef = useRef<TTSAction[]>([]);
   const currentActionIndexRef = useRef(0);
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
-  
-  // Safely initialize synthRef
   const synthRef = useRef<SpeechSynthesis | null>(
     typeof window !== 'undefined' ? window.speechSynthesis : null
   );
-  
   const timeoutRef = useRef<number | null>(null);
   const lastScriptRef = useRef<string>('');
   
@@ -55,23 +52,17 @@ export const useTTS = ({
   useEffect(() => { onLineChangeRef.current = onLineChange; }, [onLineChange]);
   useEffect(() => { onCompleteRef.current = onComplete; }, [onComplete]);
 
-  // Safer voice loading
+  // Initial Voice Loader (Redundant mostly, but keeps synth warm)
   useEffect(() => {
     if (!synthRef.current) return;
-
     const loadVoices = () => {
       synthRef.current?.getVoices();
     };
-
     loadVoices();
-    
-    // Use a polling fallback instead of dangerous chaining
     const interval = setInterval(loadVoices, 1000);
-    
     if (synthRef.current.onvoiceschanged !== undefined) {
       synthRef.current.onvoiceschanged = loadVoices;
     }
-
     return () => clearInterval(interval);
   }, []);
 
@@ -88,8 +79,8 @@ export const useTTS = ({
       const sentence = rawSentence.trim();
       if (!sentence) return;
 
+      // Check for emotional tags
       const parts = sentence.split(/(\[.*?\])/);
-      
       parts.forEach(part => {
         if (!part.trim()) return;
 
@@ -102,6 +93,7 @@ export const useTTS = ({
             return;
           }
 
+          // Modifier parsing
           if (content === 'SLOW') currentRate = 0.7;
           else if (content === 'FAST') currentRate = 1.3;
           else if (content === 'WHISPER') currentVolume = 0.3;
@@ -111,12 +103,10 @@ export const useTTS = ({
           else if (content === 'LEFT') currentPan = -1;
           else if (content === 'RIGHT') currentPan = 1;
           else if (content === 'CENTER') currentPan = 0;
-          
           else if (content === '/SLOW' || content === '/FAST') currentRate = 1.0;
           else if (content === '/WHISPER' || content === '/LOUD') currentVolume = 1.0;
           else if (content === '/UP' || content === '/DOWN') currentPitch = 1.0;
           else if (content === '/LEFT' || content === '/RIGHT') currentPan = 0;
-          
           else if (EMOTIONAL_TONES[content]) {
             const tone = EMOTIONAL_TONES[content];
             currentRate = tone.rate;
@@ -158,14 +148,12 @@ export const useTTS = ({
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
-    
     if (currentUtteranceRef.current && synthRef.current) {
       currentUtteranceRef.current.onend = null;
       currentUtteranceRef.current.onerror = null;
       currentUtteranceRef.current = null;
       synthRef.current.cancel();
-      
-      // Step back one index so we resume at the start of the current sentence
+      // Step back one to replay the interrupted sentence
       if (currentActionIndexRef.current > 0) {
         currentActionIndexRef.current--;
       }
@@ -182,7 +170,6 @@ export const useTTS = ({
   }, [pause]);
 
   const processorRef = useRef<() => void>(() => {});
-  
   processorRef.current = () => {
     if (!isPlayingRef.current) return;
 
@@ -196,7 +183,6 @@ export const useTTS = ({
     }
 
     const action = queue[idx];
-    
     if (action.originalIndex !== undefined && onLineChangeRef.current) {
       onLineChangeRef.current(action.originalIndex);
     }
@@ -216,42 +202,52 @@ export const useTTS = ({
       timeoutRef.current = window.setTimeout(processorRef.current, pauseDuration);
     } else if (action.type === 'SPEAK' && action.text) {
       if (!synthRef.current) {
-        // TTS not available, skip
+        // Retry if synth is missing (shouldn't happen)
         timeoutRef.current = window.setTimeout(processorRef.current, 100);
         return;
       }
 
       const u = new SpeechSynthesisUtterance(action.text);
       currentUtteranceRef.current = u;
+      
+      // -- VOICE SELECTION LOGIC --
+      u.lang = 'en-US'; // Default fallback
 
-      // Voice Selection
+      let voices = synthRef.current.getVoices();
+      if (voices.length === 0 && window.speechSynthesis) {
+         voices = window.speechSynthesis.getVoices(); 
+      }
+
+      let selected = null;
+
+      // 1. Try exact match from settings
       if (settings.selectedVoiceURI) {
-        let voices = synthRef.current.getVoices();
-        
-        // Fallback if empty (common issue)
-        if (voices.length === 0 && window.speechSynthesis) {
-           voices = window.speechSynthesis.getVoices(); 
-        }
-
-        let selected = voices.find(v => v.voiceURI === settings.selectedVoiceURI);
-        
-        // Fuzzy match
-        if (!selected && settings.selectedVoiceURI) {
+        selected = voices.find(v => v.voiceURI === settings.selectedVoiceURI);
+        if (!selected) {
              const targetName = voices.find(v => settings.selectedVoiceURI?.includes(v.name));
              if (targetName) selected = targetName;
         }
-
-        if (selected) {
-          u.voice = selected;
-          u.lang = selected.lang; 
-        }
       }
 
-      // Binaural Pacing
+      // 2. Fallback: Try to find a good English voice if nothing selected
+      // This is critical for Android WebViews where "default" might be silent
+      if (!selected) {
+         selected = voices.find(v => v.default) || 
+                    voices.find(v => v.lang.startsWith('en-US')) ||
+                    voices.find(v => v.lang.startsWith('en'));
+      }
+
+      if (selected) {
+        u.voice = selected;
+        u.lang = selected.lang; 
+      }
+      // -- END VOICE SELECTION --
+
+      // Binaural Pacing Adjustment
       let pacing = 1.0;
       if (settings.binauralEnabled) {
-        if (settings.binauralFreq <= 4) pacing = 0.8; // Slow down for Delta
-        else if (settings.binauralFreq <= 8) pacing = 0.9; // Slight slow for Theta
+        if (settings.binauralFreq <= 4) pacing = 0.8; // Deep trance slows down
+        else if (settings.binauralFreq <= 8) pacing = 0.9; 
       }
 
       u.rate = (action.options?.rate || 1.0) * settings.speed * pacing;
@@ -266,12 +262,11 @@ export const useTTS = ({
       };
 
       u.onend = handleEnd;
-      
       u.onerror = (e) => {
         currentUtteranceRef.current = null;
         console.warn("TTS Error:", e);
+        // Continue despite error
         if (isPlayingRef.current) {
-          // Continue despite error
           timeoutRef.current = window.setTimeout(processorRef.current, 100);
         }
       };
@@ -284,14 +279,15 @@ export const useTTS = ({
         timeoutRef.current = window.setTimeout(processorRef.current, 500);
       }
     } else {
-      // Unknown action or fallback
+      // Fallback for unknown types
       processorRef.current();
     }
   };
 
   const play = useCallback(() => {
     if (!activeScript) return;
-
+    
+    // If script changed or queue empty, re-parse
     if (activeScript !== lastScriptRef.current || actionQueueRef.current.length === 0) {
       reset(); 
       actionQueueRef.current = parseScript(activeScript);
